@@ -1,0 +1,162 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  * {
+    @apply border-vscode-border;
+  }
+  
+  body {
+    @apply bg-vscode-bg text-vscode-text font-sans;
+    @apply overflow-hidden;
+    margin: 0;
+    padding: 0;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  /* Scrollbar styling */
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+
+  ::-webkit-scrollbar-track {
+    @apply bg-vscode-bg;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    @apply bg-vscode-border;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    @apply bg-vscode-hover;
+  }
+}
+
+@layer components {
+  /* Input styles */
+  .input-vscode {
+    @apply bg-vscode-input-bg border border-vscode-input-border;
+    @apply text-vscode-text px-2 py-1 text-sm;
+    @apply focus:outline-none focus:border-vscode-accent;
+  }
+
+  /* Button styles */
+  .btn-primary {
+    @apply bg-vscode-accent hover:bg-vscode-accent-hover;
+    @apply text-white px-3 py-1.5 text-sm;
+    @apply border-none cursor-pointer;
+    @apply transition-colors duration-150;
+  }
+
+  .btn-secondary {
+    @apply bg-vscode-input-bg hover:bg-vscode-hover;
+    @apply text-vscode-text px-3 py-1.5 text-sm;
+    @apply border border-vscode-border cursor-pointer;
+    @apply transition-colors duration-150;
+  }
+
+  /* Table styles */
+  .table-vscode {
+    @apply w-full border-collapse text-sm;
+  }
+
+  .table-vscode thead {
+    @apply bg-vscode-sidebar border-b border-vscode-border;
+  }
+
+  .table-vscode th {
+    @apply text-left px-3 py-2 font-medium text-vscode-text;
+    @apply border-r border-vscode-border last:border-r-0;
+  }
+
+  .table-vscode td {
+    @apply px-3 py-1.5 border-b border-vscode-border;
+    @apply border-r border-vscode-border last:border-r-0;
+  }
+
+  .table-vscode tbody tr {
+    @apply hover:bg-vscode-hover cursor-pointer;
+    @apply transition-colors duration-100;
+  }
+
+  .table-vscode tbody tr.active {
+    @apply bg-vscode-active;
+  }
+
+  /* Tab styles */
+  .tab-bar {
+    @apply flex border-b border-vscode-border bg-vscode-sidebar;
+    @apply overflow-x-auto;
+  }
+
+  .tab {
+    @apply px-4 py-2 text-sm border-r border-vscode-border;
+    @apply cursor-pointer flex items-center gap-2;
+    @apply hover:bg-vscode-hover transition-colors;
+  }
+
+  .tab.active {
+    @apply bg-vscode-bg text-vscode-text;
+  }
+
+  .tab:not(.active) {
+    @apply text-vscode-text-muted;
+  }
+
+  /* Sidebar item styles */
+  .sidebar-item {
+    @apply flex items-center gap-2 px-3 py-1.5 text-sm;
+    @apply cursor-pointer hover:bg-vscode-hover;
+    @apply transition-colors duration-100;
+  }
+
+  .sidebar-item.active {
+    @apply bg-vscode-active border-l-2 border-vscode-accent;
+  }
+
+  .sidebar-group {
+    @apply text-xs uppercase text-vscode-text-muted px-3 py-2;
+    @apply font-semibold tracking-wider;
+  }
+
+  /* Form styles */
+  .form-group {
+    @apply mb-3;
+  }
+
+  .form-label {
+    @apply block text-sm mb-1 text-vscode-text;
+  }
+
+  .form-select {
+    @apply input-vscode w-full;
+  }
+
+  .form-textarea {
+    @apply input-vscode w-full resize-none;
+  }
+
+  /* Status badge */
+  .badge {
+    @apply inline-block px-2 py-0.5 text-xs rounded-sm;
+  }
+
+  .badge-success {
+    @apply bg-status-success/20 text-status-success border border-status-success/30;
+  }
+
+  .badge-warning {
+    @apply bg-status-warning/20 text-status-warning border border-status-warning/30;
+  }
+
+  .badge-error {
+    @apply bg-status-error/20 text-status-error border border-status-error/30;
+  }
+
+  .badge-info {
+    @apply bg-status-info/20 text-status-info border border-status-info/30;
+  }
+}
