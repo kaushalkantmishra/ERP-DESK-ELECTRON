@@ -7,19 +7,19 @@ export default {
   theme: {
     extend: {
       colors: {
-        // VS Code inspired dark theme
-        'vscode-bg': '#1e1e1e',
-        'vscode-sidebar': '#252526',
-        'vscode-titlebar': '#323233',
-        'vscode-border': '#3e3e42',
-        'vscode-hover': '#2a2d2e',
-        'vscode-active': '#37373d',
-        'vscode-text': '#cccccc',
-        'vscode-text-muted': '#858585',
-        'vscode-accent': '#0e639c',
-        'vscode-accent-hover': '#1177bb',
-        'vscode-input-bg': '#3c3c3c',
-        'vscode-input-border': '#3e3e42',
+        // VS Code inspired themes
+        'vscode-bg': 'var(--vscode-bg)',
+        'vscode-sidebar': 'var(--vscode-sidebar)',
+        'vscode-titlebar': 'var(--vscode-titlebar)',
+        'vscode-border': 'var(--vscode-border)',
+        'vscode-hover': 'var(--vscode-hover)',
+        'vscode-active': 'var(--vscode-active)',
+        'vscode-text': 'var(--vscode-text)',
+        'vscode-text-muted': 'var(--vscode-text-muted)',
+        'vscode-accent': 'var(--vscode-accent)',
+        'vscode-accent-hover': 'var(--vscode-accent-hover)',
+        'vscode-input-bg': 'var(--vscode-input-bg)',
+        'vscode-input-border': 'var(--vscode-input-border)',
         
         // Status colors
         'status-success': '#89d185',

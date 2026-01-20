@@ -6,6 +6,8 @@ node_modules/
 # Testing
 /coverage
 
+dist/
+
 # Production
 /build
 /dist
@@ -37,3 +39,17 @@ lerna-debug.log*
 # Electron
 /out
 /release
+
+# Electron build outputs
+dist-electron/
+out/
+release/
+win-unpacked/
+linux-unpacked/
+mac/
+*.exe
+*.dmg
+*.AppImage
+*.deb
+*.rpm
+*.snap
