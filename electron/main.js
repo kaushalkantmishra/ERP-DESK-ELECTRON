@@ -9,7 +9,10 @@ function createWindow() {
       nodeIntegration: false,
       contextIsolation: true
     },
-    show: false
+    show: false,
+    autoHideMenuBar: true,
+    title: "", // Remove default title
+    // icon: path.join(__dirname, '../public/favicon.ico') // Attempt to set a neutral icon if exists, or transparent
   });
 
   mainWindow.once('ready-to-show', () => {
