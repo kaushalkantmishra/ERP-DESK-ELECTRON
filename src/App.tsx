@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
+import { ThemeProvider } from './contexts/ThemeContext';
 import TitleBar from './components/layout/TitleBar';
 import Sidebar from './components/layout/Sidebar';
 import TabBar from './components/layout/TabBar';
@@ -7,6 +8,7 @@ import Dashboard from './pages/Dashboard';
 import PurchaseRequisitionList from './pages/PurchaseRequisitionList';
 import PurchaseRequisitionForm from './pages/PurchaseRequisitionForm';
 import ItemMaster from './pages/ItemMaster';
+import Settings from './pages/Settings';
 
 export interface Tab {
     id: string;
@@ -44,45 +46,48 @@ function App() {
     };
 
     return (
-        <Router>
-            <div className="h-screen flex flex-col overflow-hidden">
-                {/* Title Bar */}
-                <TitleBar />
+        <ThemeProvider>
+            <Router>
+                <div className="h-screen flex flex-col overflow-hidden">
+                    {/* Title Bar */}
+                    <TitleBar />
 
-                {/* Main Layout */}
-                <div className="flex flex-1 overflow-hidden">
-                    {/* Sidebar */}
-                    <Sidebar
-                        collapsed={sidebarCollapsed}
-                        onToggle={() => setSidebarCollapsed(!sidebarCollapsed)}
-                        onNavigate={addTab}
-                    />
-
-                    {/* Content Area */}
-                    <div className="flex-1 flex flex-col overflow-hidden">
-                        {/* Tab Bar */}
-                        <TabBar
-                            tabs={tabs}
-                            activeTabId={activeTabId}
-                            onTabClick={setActiveTabId}
-                            onTabClose={closeTab}
+                    {/* Main Layout */}
+                    <div className="flex flex-1 overflow-hidden">
+                        {/* Sidebar */}
+                        <Sidebar
+                            collapsed={sidebarCollapsed}
+                            onToggle={() => setSidebarCollapsed(!sidebarCollapsed)}
+                            onNavigate={addTab}
                         />
 
-                        {/* Main Content */}
-                        <div className="flex-1 overflow-auto bg-vscode-bg">
-                            <Routes>
-                                <Route path="/" element={<Dashboard />} />
-                                <Route path="/dashboard" element={<Dashboard />} />
-                                <Route path="/procurement/purchase-requisition" element={<PurchaseRequisitionList onNewPR={() => addTab({ id: 'new-pr', title: 'New Purchase Requisition', path: '/procurement/purchase-requisition/new', closable: true })} />} />
-                                <Route path="/procurement/purchase-requisition/new" element={<PurchaseRequisitionForm />} />
-                                <Route path="/procurement/purchase-requisition/:id" element={<PurchaseRequisitionForm />} />
-                                <Route path="/inventory/item-master" element={<ItemMaster />} />
-                            </Routes>
+                        {/* Content Area */}
+                        <div className="flex-1 flex flex-col overflow-hidden">
+                            {/* Tab Bar */}
+                            <TabBar
+                                tabs={tabs}
+                                activeTabId={activeTabId}
+                                onTabClick={setActiveTabId}
+                                onTabClose={closeTab}
+                            />
+
+                            {/* Main Content */}
+                            <div className="flex-1 overflow-auto bg-vscode-bg">
+                                <Routes>
+                                    <Route path="/" element={<Dashboard />} />
+                                    <Route path="/dashboard" element={<Dashboard />} />
+                                    <Route path="/procurement/purchase-requisition" element={<PurchaseRequisitionList onNewPR={() => addTab({ id: 'new-pr', title: 'New Purchase Requisition', path: '/procurement/purchase-requisition/new', closable: true })} />} />
+                                    <Route path="/procurement/purchase-requisition/new" element={<PurchaseRequisitionForm />} />
+                                    <Route path="/procurement/purchase-requisition/:id" element={<PurchaseRequisitionForm />} />
+                                    <Route path="/inventory/item-master" element={<ItemMaster />} />
+                                    <Route path="/settings" element={<Settings />} />
+                                </Routes>
+                            </div>
                         </div>
                     </div>
                 </div>
-            </div>
-        </Router>
+            </Router>
+        </ThemeProvider>
     );
 }
 
