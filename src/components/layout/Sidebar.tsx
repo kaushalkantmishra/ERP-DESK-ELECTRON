@@ -18,9 +18,11 @@ import {
     Send,
     FileCheck,
     MinusCircle,
-    CreditCard
+    CreditCard,
+    LogOut
 } from 'lucide-react';
 import { Tab } from '../../App';
+import { useMockData } from '../../contexts/MockContext';
 
 interface SidebarProps {
     collapsed: boolean;
@@ -38,6 +40,7 @@ interface MenuItem {
 
 const Sidebar: React.FC<SidebarProps> = ({ collapsed, onToggle, onNavigate }) => {
     const navigate = useNavigate();
+    const { logout } = useMockData();
     const [expandedGroups, setExpandedGroups] = useState<string[]>(['procurement', 'inventory']);
     const [activeItem, setActiveItem] = useState('dashboard');
 
@@ -49,6 +52,17 @@ const Sidebar: React.FC<SidebarProps> = ({ collapsed, onToggle, onNavigate }) =>
             path: '/dashboard'
         },
         {
+            id: 'master-data',
+            label: 'Master Data',
+            icon: <BookOpen size={16} />,
+            children: [
+                { id: 'item-master', label: 'Item Master', icon: <Package size={16} />, path: '/master/items' },
+                { id: 'category-master', label: 'Category Master', icon: <BookOpen size={16} />, path: '/master/categories' },
+                { id: 'vendor-master', label: 'Vendor Master', icon: <Users size={16} />, path: '/master/vendors' },
+                { id: 'warehouse-master', label: 'Warehouse Master', icon: <Warehouse size={16} />, path: '/master/warehouses' },
+            ]
+        },
+        {
             id: 'procurement',
             label: 'Procurement',
             icon: <ShoppingCart size={16} />,
@@ -57,7 +71,6 @@ const Sidebar: React.FC<SidebarProps> = ({ collapsed, onToggle, onNavigate }) =>
                 { id: 'rfq', label: 'RFQ', icon: <Send size={16} />, path: '/procurement/rfq' },
                 { id: 'quotations', label: 'Quotations', icon: <FileCheck size={16} />, path: '/procurement/quotations' },
                 { id: 'purchase-order', label: 'Purchase Order', icon: <ClipboardList size={16} />, path: '/procurement/purchase-order' },
-                { id: 'vendor-management', label: 'Vendor Management', icon: <Users size={16} />, path: '/procurement/vendor-management' },
             ]
         },
         {
@@ -65,12 +78,10 @@ const Sidebar: React.FC<SidebarProps> = ({ collapsed, onToggle, onNavigate }) =>
             label: 'Inventory',
             icon: <Warehouse size={16} />,
             children: [
-                { id: 'dashboard-inventory', label: 'Overview', icon: <LayoutDashboard size={16} />, path: '/inventory/dashboard' },
-                { id: 'item-master', label: 'Item Master', icon: <BookOpen size={16} />, path: '/inventory/item-master' },
-                { id: 'grn', label: 'Goods Receipt (GRN)', icon: <Package size={16} />, path: '/inventory/grn' },
-                { id: 'stock-ledger', label: 'Stock Ledger', icon: <TrendingUp size={16} />, path: '/inventory/stock-ledger' },
-                { id: 'material-issue', label: 'Material Issue', icon: <MinusCircle size={16} />, path: '/inventory/material-issue' },
-                { id: 'stock-adjustment', label: 'Stock Adjustment', icon: <ClipboardList size={16} />, path: '/inventory/stock-adjustment' },
+                { id: 'stock-management', label: 'Stock Management', icon: <TrendingUp size={16} />, path: '/inventory/stock-management' },
+                { id: 'stock-transfer', label: 'Stock Transfer', icon: <ClipboardList size={16} />, path: '/inventory/transfer' },
+                { id: 'material-issue', label: 'Material Issue', icon: <MinusCircle size={16} />, path: '/inventory/issue' },
+                { id: 'grn', label: 'Goods Receipt', icon: <Package size={16} />, path: '/inventory/grn' },
             ]
         },
         {
@@ -79,7 +90,6 @@ const Sidebar: React.FC<SidebarProps> = ({ collapsed, onToggle, onNavigate }) =>
             icon: <CreditCard size={16} />,
             children: [
                 { id: 'invoices', label: 'Vendor Invoices', icon: <FileText size={16} />, path: '/finance/invoices' },
-                { id: 'payments', label: 'Payments', icon: <CreditCard size={16} />, path: '/finance/payments' },
             ]
         },
         {
@@ -87,6 +97,12 @@ const Sidebar: React.FC<SidebarProps> = ({ collapsed, onToggle, onNavigate }) =>
             label: 'Reports',
             icon: <TrendingUp size={16} />,
             path: '/reports'
+        },
+        {
+            id: 'audit',
+            label: 'Audit Logs',
+            icon: <ClipboardList size={16} />,
+            path: '/audit-log'
         }
     ];
 
@@ -96,6 +112,11 @@ const Sidebar: React.FC<SidebarProps> = ({ collapsed, onToggle, onNavigate }) =>
             label: 'Settings',
             icon: <Settings size={16} />,
             path: '/settings'
+        },
+        {
+            id: 'logout',
+            label: 'Logout',
+            icon: <LogOut size={16} />,
         }
     ];
 
@@ -108,6 +129,11 @@ const Sidebar: React.FC<SidebarProps> = ({ collapsed, onToggle, onNavigate }) =>
     };
 
     const handleItemClick = (item: MenuItem) => {
+        if (item.id === 'logout') {
+            logout();
+            return;
+        }
+
         if (item.path) {
             setActiveItem(item.id);
             navigate(item.path);

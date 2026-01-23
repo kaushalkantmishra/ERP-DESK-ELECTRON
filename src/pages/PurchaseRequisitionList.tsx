@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Plus, Filter, Download } from 'lucide-react';
 
 import { useMockData } from '../contexts/MockContext';
@@ -8,6 +9,7 @@ interface PurchaseRequisitionListProps {
 }
 
 const PurchaseRequisitionList: React.FC<PurchaseRequisitionListProps> = ({ onNewPR }) => {
+    const navigate = useNavigate();
     const { prs } = useMockData();
     const purchaseRequisitions = prs; // Use data from context
 
@@ -21,6 +23,7 @@ const PurchaseRequisitionList: React.FC<PurchaseRequisitionListProps> = ({ onNew
             if (e.ctrlKey && e.key === 'n') {
                 e.preventDefault();
                 onNewPR();
+                navigate('/procurement/purchase-requisition/new');
             }
 
             if (e.key === 'ArrowDown') {
@@ -78,7 +81,10 @@ const PurchaseRequisitionList: React.FC<PurchaseRequisitionListProps> = ({ onNew
 
             {/* Toolbar */}
             <div className="px-4 pb-3 flex items-center gap-3 border-b border-vscode-border">
-                <button className="btn-primary flex items-center gap-2" onClick={onNewPR}>
+                <button className="btn-primary flex items-center gap-2" onClick={() => {
+                    onNewPR();
+                    navigate('/procurement/purchase-requisition/new');
+                }}>
                     <Plus size={14} />
                     <span>New PR (Ctrl+N)</span>
                 </button>

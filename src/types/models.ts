@@ -4,6 +4,8 @@ export type Role = 'Admin' | 'Procurement' | 'Store' | 'Dept' | 'Finance' | 'Ven
 export interface User {
     id: string;
     name: string;
+    email: string;
+    password?: string; // For mock login
     role: Role;
     department?: string;
 }
@@ -15,9 +17,9 @@ export interface Item {
     name: string;
     category: string;
     uom: string;
-    currentStock: number;
-    reorderLevel: number;
     price: number; // Standard/Last Purchase Price
+    // Deprecated: currentStock (moved to StockLevel per warehouse)
+    // keeping for backward compatibility if needed, but logic should use StockLevel
 }
 
 export interface Vendor {
@@ -27,12 +29,56 @@ export interface Vendor {
     phone: string;
     rating: number; // 1-5
     address: string;
+    taxId?: string;
+    paymentTerms?: string;
+    contactPerson?: string;
+}
+
+export interface Category {
+    id: string;
+    name: string;
+    description?: string;
+    uom?: string; // e.g. PCS, KG, L
 }
 
 export interface Warehouse {
     id: string;
     name: string;
     location: string;
+    managerId?: string;
+}
+
+// Inventory Operations
+export interface StockLevel {
+    itemId: string;
+    warehouseId: string;
+    quantity: number;
+    minStockLevel: number; // Reorder point
+}
+
+export type StockMovementType = 'Issue' | 'Transfer' | 'Adjustment' | 'Receipt';
+
+export interface StockTransaction {
+    id: string;
+    itemId: string;
+    type: StockMovementType;
+    quantity: number;
+    date: string;
+    sourceWarehouseId?: string; // For Transfer/Issue
+    targetWarehouseId?: string; // For Transfer/Receipt
+    referenceId?: string; // PO URL, GRN ID, or Dept Request ID
+    notes?: string;
+    performedBy: string;
+}
+
+export interface MaterialRequest {
+    id: string;
+    requestNo: string;
+    requestorId: string;
+    department: string;
+    date: string;
+    items: { itemId: string; quantity: number }[];
+    status: 'Requested' | 'Approved' | 'Issued' | 'Rejected';
 }
 
 // Procurement Flow
@@ -106,6 +152,33 @@ export interface GRN {
     poId: string;
     receivedDate: string;
     receivedBy: string;
+    warehouseId: string; // Where items are stored
     items: { itemId: string; receivedQty: number; acceptedQty: number; rejectedQty: number }[];
     status: GRNStatus;
+}
+
+// Finance
+export type InvoiceStatus = 'Received' | 'Verified' | 'Approved' | 'Paid' | 'Rejected';
+
+export interface Invoice {
+    id: string;
+    invoiceNo: string;
+    vendorId: string;
+    poId: string;
+    date: string;
+    dueDate: string;
+    amount: number;
+    status: InvoiceStatus;
+    remarks?: string;
+}
+
+// Audit & Control
+export interface ActivityLog {
+    id: string;
+    userId: string;
+    userName: string;
+    action: string;
+    description: string;
+    timestamp: string;
+    module: 'Auth' | 'Procurement' | 'Inventory' | 'Finance' | 'System';
 }

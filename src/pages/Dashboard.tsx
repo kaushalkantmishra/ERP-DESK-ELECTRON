@@ -4,13 +4,29 @@ import { useMockData } from '../contexts/MockContext';
 import { useNavigate } from 'react-router-dom';
 
 const Dashboard: React.FC = () => {
-    const { prs, pos, items, currentUser } = useMockData();
+    const { prs, pos, items, currentUser, stockLevels } = useMockData();
     const navigate = useNavigate();
 
-    // Calculate KPIs
+    // Calculate Stock Stats using StockLevels
+    // Group stock by item
+    const itemStockMap = new Map<string, { current: number, min: number }>();
+    stockLevels.forEach(sl => {
+        const current = itemStockMap.get(sl.itemId) || { current: 0, min: 0 };
+        current.current += sl.quantity;
+        current.min += sl.minStockLevel;
+        itemStockMap.set(sl.itemId, current);
+    });
+
     const pendingPRs = prs.filter(pr => pr.status === 'Submitted').length;
     const openPOs = pos.filter(po => po.status === 'Sent' || po.status === 'Partially Received').length;
-    const lowStockItems = items.filter(i => i.currentStock <= i.reorderLevel).length;
+    
+    // Low stock items (where total stock < total min level)
+    const lowStockItems = items.filter(i => {
+        const stock = itemStockMap.get(i.id);
+        if (!stock) return false;
+        return stock.current <= stock.min;
+    }).length;
+
     const urgentPRs = prs.filter(pr => pr.priority === 'Urgent' && pr.status !== 'Completed').length;
 
     // Derived Activity (Mock)
@@ -32,7 +48,8 @@ const Dashboard: React.FC = () => {
 
     // Inventory Distribution
     const inventoryByCategory = items.reduce((acc, item) => {
-        acc[item.category] = (acc[item.category] || 0) + (item.currentStock * item.price);
+        const stock = itemStockMap.get(item.id)?.current || 0;
+        acc[item.category] = (acc[item.category] || 0) + (stock * item.price);
         return acc;
     }, {} as Record<string, number>);
     const totalInventoryValue = Object.values(inventoryByCategory).reduce((a, b) => a + b, 0);

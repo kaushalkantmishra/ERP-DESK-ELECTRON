@@ -9,7 +9,7 @@ const PurchaseRequisitionForm: React.FC = () => {
     const [activeTab, setActiveTab] = useState<'details' | 'items' | 'attachments'>('details');
 
     // Form State
-    const [department, setDepartment] = useState(currentUser.department || '');
+    const [department, setDepartment] = useState(currentUser?.department || '');
     const [reqDate, setReqDate] = useState('');
     const [priority, setPriority] = useState<Priority>('Medium');
     const [justification, setJustification] = useState('');
@@ -20,6 +20,7 @@ const PurchaseRequisitionForm: React.FC = () => {
     const [attachments, setAttachments] = useState<{ id: number; name: string; size: string }[]>([]);
 
     const handleSubmit = () => {
+        if (!currentUser) return;
         addPR({
             requestorId: currentUser.id,
             department,
@@ -107,8 +108,8 @@ const PurchaseRequisitionForm: React.FC = () => {
 
             <div className="flex-1 overflow-auto p-4">
                 {activeTab === 'details' && (
-                    <div className="max-w-3xl">
-                        <div className="grid grid-cols-2 gap-4">
+                    <div className="w-full p-6 bg-vscode-sidebar rounded-xl border border-vscode-border shadow-sm">
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
                             <div className="form-group">
                                 <label className="form-label">Department *</label>
                                 <select
@@ -128,7 +129,7 @@ const PurchaseRequisitionForm: React.FC = () => {
 
                             <div className="form-group">
                                 <label className="form-label">Requested By</label>
-                                <input type="text" className="input-vscode w-full" value={currentUser.name} disabled />
+                                <input type="text" className="input-vscode w-full" value={currentUser?.name || ''} disabled />
                             </div>
 
                             <div className="form-group">
