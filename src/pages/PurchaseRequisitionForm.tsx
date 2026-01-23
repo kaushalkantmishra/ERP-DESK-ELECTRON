@@ -1,15 +1,44 @@
 import React, { useState } from 'react';
 import { Save, Send, X, Plus, Trash2, Upload, File } from 'lucide-react';
 
+import { useMockData } from '../contexts/MockContext';
+import { Priority } from '../types/models';
+
 const PurchaseRequisitionForm: React.FC = () => {
+    const { currentUser, addPR } = useMockData();
     const [activeTab, setActiveTab] = useState<'details' | 'items' | 'attachments'>('details');
+
+    // Form State
+    const [department, setDepartment] = useState(currentUser.department || '');
+    const [reqDate, setReqDate] = useState('');
+    const [priority, setPriority] = useState<Priority>('Medium');
+    const [justification, setJustification] = useState('');
+
     const [items, setItems] = useState([
-        { id: 1, item: '', uom: '', qty: '', estimatedPrice: '', remarks: '' }
+        { id: 1, itemId: '', uom: '', qty: 1, estimatedPrice: 0, remarks: '' }
     ]);
     const [attachments, setAttachments] = useState<{ id: number; name: string; size: string }[]>([]);
 
+    const handleSubmit = () => {
+        addPR({
+            requestorId: currentUser.id,
+            department,
+            date: new Date().toISOString().split('T')[0],
+            priority,
+            status: 'Submitted', // Auto submit for now
+            justification,
+            items: items.filter(i => i.itemId).map(i => ({
+                itemId: i.itemId,
+                quantity: i.qty,
+                requiredDate: reqDate
+            }))
+        });
+        alert('PR Submitted successfully!');
+        // close form or navigate back
+    };
+
     const addItem = () => {
-        setItems([...items, { id: items.length + 1, item: '', uom: '', qty: '', estimatedPrice: '', remarks: '' }]);
+        setItems([...items, { id: items.length + 1, itemId: '', uom: '', qty: 1, estimatedPrice: 0, remarks: '' }]);
     };
 
     const removeItem = (id: number) => {
@@ -42,7 +71,7 @@ const PurchaseRequisitionForm: React.FC = () => {
                     <Save size={14} />
                     <span>Save Draft</span>
                 </button>
-                <button className="btn-primary flex items-center gap-2">
+                <button className="btn-primary flex items-center gap-2" onClick={handleSubmit}>
                     <Send size={14} />
                     <span>Submit</span>
                 </button>
@@ -82,27 +111,43 @@ const PurchaseRequisitionForm: React.FC = () => {
                         <div className="grid grid-cols-2 gap-4">
                             <div className="form-group">
                                 <label className="form-label">Department *</label>
-                                <select className="form-select">
+                                <select
+                                    className="form-select"
+                                    value={department}
+                                    onChange={(e) => setDepartment(e.target.value)}
+                                >
                                     <option value="">Select Department</option>
                                     <option value="IT">IT</option>
                                     <option value="HR">HR</option>
                                     <option value="Finance">Finance</option>
+                                    <option value="Operations">Operations</option>
+                                    <option value="Marketing">Marketing</option>
+                                    <option value="Warehouse">Warehouse</option>
                                 </select>
                             </div>
 
                             <div className="form-group">
                                 <label className="form-label">Requested By</label>
-                                <input type="text" className="input-vscode w-full" value="Admin User" disabled />
+                                <input type="text" className="input-vscode w-full" value={currentUser.name} disabled />
                             </div>
 
                             <div className="form-group">
                                 <label className="form-label">Required Date *</label>
-                                <input type="date" className="input-vscode w-full" />
+                                <input
+                                    type="date"
+                                    className="input-vscode w-full"
+                                    value={reqDate}
+                                    onChange={(e) => setReqDate(e.target.value)}
+                                />
                             </div>
 
                             <div className="form-group">
                                 <label className="form-label">Priority *</label>
-                                <select className="form-select">
+                                <select
+                                    className="form-select"
+                                    value={priority}
+                                    onChange={(e) => setPriority(e.target.value as Priority)}
+                                >
                                     <option value="Low">Low</option>
                                     <option value="Medium">Medium</option>
                                     <option value="High">High</option>
@@ -112,7 +157,13 @@ const PurchaseRequisitionForm: React.FC = () => {
 
                             <div className="form-group col-span-2">
                                 <label className="form-label">Justification *</label>
-                                <textarea className="form-textarea" rows={4} placeholder="Provide justification..." />
+                                <textarea
+                                    className="form-textarea"
+                                    rows={4}
+                                    placeholder="Provide justification..."
+                                    value={justification}
+                                    onChange={(e) => setJustification(e.target.value)}
+                                />
                             </div>
                         </div>
                     </div>
@@ -143,11 +194,71 @@ const PurchaseRequisitionForm: React.FC = () => {
                                 <tbody>
                                     {items.map((item) => (
                                         <tr key={item.id}>
-                                            <td><input type="text" className="input-vscode w-full" placeholder="Search item..." /></td>
-                                            <td><input type="text" className="input-vscode w-full" placeholder="UOM" /></td>
-                                            <td><input type="number" className="input-vscode w-full" placeholder="0" /></td>
-                                            <td><input type="number" className="input-vscode w-full" placeholder="0.00" /></td>
-                                            <td><input type="text" className="input-vscode w-full" placeholder="Remarks" /></td>
+                                            <td>
+                                                <input
+                                                    type="text"
+                                                    className="input-vscode w-full"
+                                                    placeholder="Search item..."
+                                                    value={item.itemId}
+                                                    onChange={(e) => {
+                                                        const newItems = [...items];
+                                                        newItems[items.indexOf(item)].itemId = e.target.value;
+                                                        setItems(newItems);
+                                                    }}
+                                                />
+                                            </td>
+                                            <td>
+                                                <input
+                                                    type="text"
+                                                    className="input-vscode w-full"
+                                                    placeholder="UOM"
+                                                    value={item.uom}
+                                                    onChange={(e) => {
+                                                        const newItems = [...items];
+                                                        newItems[items.indexOf(item)].uom = e.target.value;
+                                                        setItems(newItems);
+                                                    }}
+                                                />
+                                            </td>
+                                            <td>
+                                                <input
+                                                    type="number"
+                                                    className="input-vscode w-full"
+                                                    placeholder="0"
+                                                    value={item.qty}
+                                                    onChange={(e) => {
+                                                        const newItems = [...items];
+                                                        newItems[items.indexOf(item)].qty = parseInt(e.target.value) || 0;
+                                                        setItems(newItems);
+                                                    }}
+                                                />
+                                            </td>
+                                            <td>
+                                                <input
+                                                    type="number"
+                                                    className="input-vscode w-full"
+                                                    placeholder="0.00"
+                                                    value={item.estimatedPrice}
+                                                    onChange={(e) => {
+                                                        const newItems = [...items];
+                                                        newItems[items.indexOf(item)].estimatedPrice = parseFloat(e.target.value) || 0;
+                                                        setItems(newItems);
+                                                    }}
+                                                />
+                                            </td>
+                                            <td>
+                                                <input
+                                                    type="text"
+                                                    className="input-vscode w-full"
+                                                    placeholder="Remarks"
+                                                    value={item.remarks}
+                                                    onChange={(e) => {
+                                                        const newItems = [...items];
+                                                        newItems[items.indexOf(item)].remarks = e.target.value;
+                                                        setItems(newItems);
+                                                    }}
+                                                />
+                                            </td>
                                             <td>
                                                 <button className="text-status-error hover:bg-vscode-hover p-1" onClick={() => removeItem(item.id)}>
                                                     <Trash2 size={14} />

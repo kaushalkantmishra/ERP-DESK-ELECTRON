@@ -1,142 +1,276 @@
 import React from 'react';
-import { FileText, ShoppingCart, AlertTriangle, TrendingDown } from 'lucide-react';
+import { FileText, ShoppingCart, AlertTriangle, TrendingDown, Plus, Package, DollarSign, Activity } from 'lucide-react';
+import { useMockData } from '../contexts/MockContext';
+import { useNavigate } from 'react-router-dom';
 
 const Dashboard: React.FC = () => {
-    const kpis = [
-        { label: 'Pending PRs', value: 12, icon: <FileText size={20} />, color: 'text-status-info' },
-        { label: 'Open POs', value: 8, icon: <ShoppingCart size={20} />, color: 'text-status-warning' },
-        { label: 'Low Stock Items', value: 23, icon: <TrendingDown size={20} />, color: 'text-status-error' },
-        { label: 'Overdue PRs', value: 5, icon: <AlertTriangle size={20} />, color: 'text-priority-urgent' },
-    ];
+    const { prs, pos, items, currentUser } = useMockData();
+    const navigate = useNavigate();
 
+    // Calculate KPIs
+    const pendingPRs = prs.filter(pr => pr.status === 'Submitted').length;
+    const openPOs = pos.filter(po => po.status === 'Sent' || po.status === 'Partially Received').length;
+    const lowStockItems = items.filter(i => i.currentStock <= i.reorderLevel).length;
+    const urgentPRs = prs.filter(pr => pr.priority === 'Urgent' && pr.status !== 'Completed').length;
+
+    // Derived Activity (Mock)
     const recentActivity = [
-        { id: 'PR-2024-001', type: 'PR Created', department: 'IT', user: 'John Doe', date: '2024-01-12 14:30', status: 'Pending' },
-        { id: 'PO-2024-045', type: 'PO Approved', department: 'Operations', user: 'Jane Smith', date: '2024-01-12 13:15', status: 'Approved' },
-        { id: 'GRN-2024-089', type: 'Goods Received', department: 'Warehouse', user: 'Mike Johnson', date: '2024-01-12 11:45', status: 'Completed' },
-        { id: 'PR-2024-002', type: 'PR Rejected', department: 'HR', user: 'Sarah Williams', date: '2024-01-12 10:20', status: 'Rejected' },
-        { id: 'SA-2024-012', type: 'Stock Adjusted', department: 'Warehouse', user: 'Tom Brown', date: '2024-01-12 09:00', status: 'Completed' },
+        ...prs.slice(0, 3).map(pr => ({ id: pr.prNo, type: 'PR Created', dept: pr.department, date: pr.date, status: pr.status })),
+        ...pos.slice(0, 3).map(po => ({ id: po.poNo, type: 'PO Sent', dept: 'Procurement', date: po.date, status: po.status }))
+    ].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()).slice(0, 5);
+
+    const kpis = [
+        { label: 'Pending PRs', value: pendingPRs, icon: <FileText size={20} />, color: 'text-status-info' },
+        { label: 'Open POs', value: openPOs, icon: <ShoppingCart size={20} />, color: 'text-status-warning' },
+        { label: 'Low Stock Items', value: lowStockItems, icon: <TrendingDown size={20} />, color: 'text-status-error' },
+        { label: 'Urgent Requests', value: urgentPRs, icon: <AlertTriangle size={20} />, color: 'text-priority-urgent' },
     ];
 
-    const alerts = [
-        { id: 1, type: 'Low Stock', item: 'Laptop - Dell Latitude 5420', currentStock: 2, reorderLevel: 5, severity: 'high' },
-        { id: 2, type: 'Overdue PR', prNo: 'PR-2023-456', department: 'Marketing', daysOverdue: 7, severity: 'urgent' },
-        { id: 3, type: 'Low Stock', item: 'Mouse - Logitech M185', currentStock: 8, reorderLevel: 10, severity: 'medium' },
-        { id: 4, type: 'Pending Approval', prNo: 'PR-2024-003', department: 'Finance', pendingDays: 3, severity: 'medium' },
-    ];
+    // Dummy Spending Data for Chart
+    const monthlySpend = [4500, 5200, 4800, 6100, 5500, 7200];
+    const maxSpend = Math.max(...monthlySpend);
+
+    // Inventory Distribution
+    const inventoryByCategory = items.reduce((acc, item) => {
+        acc[item.category] = (acc[item.category] || 0) + (item.currentStock * item.price);
+        return acc;
+    }, {} as Record<string, number>);
+    const totalInventoryValue = Object.values(inventoryByCategory).reduce((a, b) => a + b, 0);
+
+    // Upcoming Deliveries
+    const upcomingDeliveries = pos
+        .filter(po => ['Sent', 'Partially Received', 'Acknowledged'].includes(po.status))
+        .sort((a, b) => new Date(a.deliveryDate).getTime() - new Date(b.deliveryDate).getTime())
+        .slice(0, 3);
 
     return (
-        <div className="p-4">
-            {/* Breadcrumb */}
-            <div className="text-xs text-vscode-text-muted mb-4 flex items-center gap-2">
-                <span>Home</span>
-                <span>/</span>
-                <span className="text-vscode-text">Dashboard</span>
+        <div className="p-4 flex flex-col gap-4">
+            {/* Header & Quick Actions */}
+            <div className="flex items-center justify-between">
+                <div className="text-xs text-vscode-text-muted">
+                    <span className="text-vscode-text text-lg font-semibold">Dashboard</span>
+                    <div className="mt-1">Welcome back, {currentUser.name} ({currentUser.role})</div>
+                </div>
+
+                <div className="flex gap-2">
+                    <button className="btn-primary flex items-center gap-2" onClick={() => navigate('/procurement/purchase-requisition/new')}>
+                        <Plus size={14} /> <span>New PR</span>
+                    </button>
+                    <button className="btn-secondary flex items-center gap-2" onClick={() => navigate('/inventory/grn')}>
+                        <Package size={14} /> <span>Goods Receipt</span>
+                    </button>
+                </div>
             </div>
 
-            {/* KPI Strip */}
-            <div className="grid grid-cols-4 gap-3 mb-4">
+            {/* KPIs */}
+            <div className="grid grid-cols-4 gap-3">
                 {kpis.map((kpi, index) => (
                     <div
                         key={index}
-                        className="bg-vscode-sidebar border border-vscode-border p-3 hover:border-vscode-accent transition-colors cursor-pointer"
+                        className="bg-vscode-sidebar border border-vscode-border p-4 rounded-md hover:border-vscode-accent transition-colors relative"
                     >
-                        <div className="flex items-center justify-between mb-2">
-                            <span className="text-xs text-vscode-text-muted uppercase">{kpi.label}</span>
-                            <span className={kpi.color}>{kpi.icon}</span>
+                        <div className={`absolute top-4 right-4 p-2 rounded-full bg-opacity-10 ${kpi.color.replace('text-', 'bg-')} ${kpi.color}`}>
+                            {kpi.icon}
                         </div>
+                        <div className="text-xs text-vscode-text-muted uppercase font-semibold mb-2">{kpi.label}</div>
                         <div className="text-2xl font-bold font-mono">{kpi.value}</div>
                     </div>
                 ))}
             </div>
 
-            <div className="grid grid-cols-3 gap-3">
-                {/* Recent Activity */}
-                <div className="col-span-2 bg-vscode-sidebar border border-vscode-border">
-                    <div className="border-b border-vscode-border px-3 py-2">
-                        <h2 className="text-sm font-semibold">Recent Activity</h2>
+            <div className="grid grid-cols-3 gap-4 h-full">
+                {/* Main Content Area - Activity & Tables */}
+                <div className="col-span-2 flex flex-col gap-4">
+                    {/* Spending Chart (CSS/SVG) */}
+                    <div className="bg-vscode-sidebar border border-vscode-border p-4 rounded-md">
+                        <div className="flex items-center justify-between mb-6">
+                            <h3 className="font-semibold flex items-center gap-2">
+                                <DollarSign size={16} className="text-vscode-accent" />
+                                Monthly Spending Trend (6 Months)
+                            </h3>
+                            <span className="text-xs text-vscode-text-muted">Total: $33,300</span>
+                        </div>
+                        <div className="h-40 flex justify-between gap-2 px-2">
+                            {monthlySpend.map((value, i) => (
+                                <div key={i} className="flex flex-col items-center justify-end gap-2 flex-1 group cursor-pointer h-full">
+                                    <div className="relative w-full bg-vscode-accent opacity-60 hover:opacity-100 rounded-t-sm transition-all duration-300"
+                                        style={{ height: `${(value / maxSpend) * 80}%` }}>
+                                        <div className="absolute -top-8 left-1/2 -translate-x-1/2 bg-vscode-bg border border-vscode-border px-2 py-1 text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap z-10">
+                                            ${value}
+                                        </div>
+                                    </div>
+                                    <span className="text-xs text-vscode-text-muted">M{i + 1}</span>
+                                </div>
+                            ))}
+                        </div>
                     </div>
-                    <div className="overflow-auto" style={{ maxHeight: '400px' }}>
-                        <table className="table-vscode">
+
+                </div>
+
+                {/* Inventory Distribution Row */}
+                <div className="grid grid-cols-2 gap-4">
+                    <div className="bg-vscode-sidebar border border-vscode-border p-4 rounded-md">
+                        <h3 className="font-semibold text-sm mb-4 flex items-center gap-2">
+                            <Package size={16} className="text-vscode-accent" />
+                            Inventory Value by Category
+                        </h3>
+                        <div className="space-y-3">
+                            {Object.entries(inventoryByCategory).map(([cat, val], i) => (
+                                <div key={i}>
+                                    <div className="flex justify-between text-xs mb-1">
+                                        <span>{cat}</span>
+                                        <span className="font-mono">${val.toLocaleString()}</span>
+                                    </div>
+                                    <div className="h-1.5 bg-vscode-bg rounded-full overflow-hidden">
+                                        <div
+                                            className="h-full bg-vscode-accent opacity-80"
+                                            style={{ width: `${(val / totalInventoryValue) * 100}%` }}
+                                        ></div>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+
+                    {/* Top Vendors (New Small Widget) */}
+                    <div className="bg-vscode-sidebar border border-vscode-border p-4 rounded-md flex flex-col justify-center items-center text-center">
+                        <div className="text-4xl font-bold text-vscode-accent mb-2">
+                            ${totalInventoryValue.toLocaleString()}
+                        </div>
+                        <div className="text-sm text-vscode-text-muted">Total Inventory Value</div>
+                        <div className="mt-4 text-xs text-status-success bg-status-success bg-opacity-10 px-2 py-1 rounded">
+                            +12% vs Last Month
+                        </div>
+                    </div>
+                </div>
+
+                {/* Recent Activity Table */}
+                <div className="bg-vscode-sidebar border border-vscode-border rounded-md flex-1">
+                    <div className="border-b border-vscode-border px-4 py-3 flex items-center justify-between">
+                        <h3 className="font-semibold flex items-center gap-2">
+                            <Activity size={16} className="text-vscode-accent" />
+                            Recent Activity
+                        </h3>
+                    </div>
+                    <div className="p-0">
+                        <table className="table-vscode w-full">
                             <thead>
                                 <tr>
                                     <th>ID</th>
                                     <th>Type</th>
-                                    <th>Department</th>
-                                    <th>User</th>
-                                    <th>Date</th>
+                                    <th>Details</th>
                                     <th>Status</th>
                                 </tr>
                             </thead>
                             <tbody>
-                                {recentActivity.map((activity) => (
-                                    <tr key={activity.id}>
-                                        <td className="font-mono text-xs">{activity.id}</td>
-                                        <td>{activity.type}</td>
-                                        <td>{activity.department}</td>
-                                        <td>{activity.user}</td>
-                                        <td className="font-mono text-xs">{activity.date}</td>
+                                {recentActivity.map((act, i) => (
+                                    <tr key={i} className="hover:bg-vscode-hover">
+                                        <td className="font-mono text-xs text-vscode-accent">{act.id}</td>
+                                        <td className="text-xs">{act.type}</td>
+                                        <td className="text-xs text-vscode-text-muted">
+                                            {act.dept} • {act.date}
+                                        </td>
                                         <td>
-                                            <span className={`badge ${activity.status === 'Completed' ? 'badge-success' :
-                                                    activity.status === 'Approved' ? 'badge-info' :
-                                                        activity.status === 'Rejected' ? 'badge-error' :
-                                                            'badge-warning'
+                                            <span className={`badge text-[10px] px-1.5 py-0.5 ${['Completed', 'RFQ Created'].includes(act.status) ? 'badge-success' :
+                                                ['Approved', 'Sent', 'Acknowledged', 'Draft', 'Closed'].includes(act.status) ? 'badge-info' :
+                                                    ['Submitted', 'Partially Received'].includes(act.status) ? 'badge-warning' :
+                                                        'badge-error'
                                                 }`}>
-                                                {activity.status}
+                                                {act.status}
                                             </span>
                                         </td>
                                     </tr>
                                 ))}
+                                {recentActivity.length === 0 && (
+                                    <tr><td colSpan={4} className="text-center py-4 text-vscode-text-muted">No recent activity</td></tr>
+                                )}
                             </tbody>
                         </table>
                     </div>
                 </div>
+            </div>
 
-                {/* Alerts Panel */}
-                <div className="bg-vscode-sidebar border border-vscode-border">
-                    <div className="border-b border-vscode-border px-3 py-2">
-                        <h2 className="text-sm font-semibold">Alerts</h2>
-                    </div>
-                    <div className="p-2 space-y-2 overflow-auto" style={{ maxHeight: '400px' }}>
-                        {alerts.map((alert) => (
-                            <div
-                                key={alert.id}
-                                className={`p-2 border-l-2 bg-vscode-bg hover:bg-vscode-hover cursor-pointer transition-colors ${alert.severity === 'urgent' ? 'border-priority-urgent' :
-                                        alert.severity === 'high' ? 'border-priority-high' :
-                                            'border-priority-medium'
-                                    }`}
-                            >
-                                <div className="flex items-start gap-2">
-                                    <AlertTriangle size={14} className={
-                                        alert.severity === 'urgent' ? 'text-priority-urgent' :
-                                            alert.severity === 'high' ? 'text-priority-high' :
-                                                'text-priority-medium'
-                                    } />
-                                    <div className="flex-1">
-                                        <div className="text-xs font-semibold mb-1">{alert.type}</div>
-                                        {alert.type === 'Low Stock' ? (
-                                            <div className="text-xs text-vscode-text-muted">
-                                                <div>{alert.item}</div>
-                                                <div className="mt-1">Stock: {alert.currentStock} / Reorder: {alert.reorderLevel}</div>
-                                            </div>
-                                        ) : alert.type === 'Overdue PR' ? (
-                                            <div className="text-xs text-vscode-text-muted">
-                                                <div>{alert.prNo} - {alert.department}</div>
-                                                <div className="mt-1">{alert.daysOverdue} days overdue</div>
-                                            </div>
-                                        ) : (
-                                            <div className="text-xs text-vscode-text-muted">
-                                                <div>{alert.prNo} - {alert.department}</div>
-                                                <div className="mt-1">Pending for {alert.pendingDays} days</div>
-                                            </div>
-                                        )}
-                                    </div>
+            {/* Right Panel - Alerts & Summary */}
+            <div className="flex flex-col gap-4">
+                {/* Budget / Department Distribution */}
+                <div className="bg-vscode-sidebar border border-vscode-border p-4 rounded-md">
+                    <h3 className="font-semibold mb-4 text-sm">Budget Utilization</h3>
+                    <div className="space-y-4">
+                        {[
+                            { dept: 'IT Department', used: 85, color: 'bg-status-error' },
+                            { dept: 'Marketing', used: 45, color: 'bg-status-info' },
+                            { dept: 'Operations', used: 60, color: 'bg-status-warning' },
+                            { dept: 'HR', used: 30, color: 'bg-status-success' },
+                        ].map((item, i) => (
+                            <div key={i}>
+                                <div className="flex justify-between text-xs mb-1">
+                                    <span>{item.dept}</span>
+                                    <span>{item.used}%</span>
+                                </div>
+                                <div className="h-2 bg-vscode-bg rounded-full overflow-hidden border border-vscode-border">
+                                    <div className={`h-full ${item.color}`} style={{ width: `${item.used}%` }}></div>
                                 </div>
                             </div>
                         ))}
                     </div>
                 </div>
+
+                {/* Upcoming Deliveries */}
+                <div className="bg-vscode-sidebar border border-vscode-border p-4 rounded-md">
+                    <div className="flex items-center justify-between mb-3">
+                        <h3 className="font-semibold text-sm">Upcoming Deliveries</h3>
+                        <span className="text-xs text-vscode-text-muted">Next 7 Days</span>
+                    </div>
+                    <div className="space-y-3">
+                        {upcomingDeliveries.length > 0 ? (
+                            upcomingDeliveries.map((po, i) => (
+                                <div key={i} className="flex items-center justify-between p-2 bg-vscode-bg rounded border border-vscode-border hover:border-vscode-accent transition-colors cursor-pointer">
+                                    <div>
+                                        <div className="text-xs font-semibold text-vscode-accent">{po.poNo}</div>
+                                        <div className="text-[10px] text-vscode-text-muted">Vendor: {po.vendorId}</div>
+                                    </div>
+                                    <div className="text-right">
+                                        <div className="text-xs font-mono">{po.deliveryDate}</div>
+                                        <div className="text-[10px] text-status-info">{po.status}</div>
+                                    </div>
+                                </div>
+                            ))
+                        ) : (
+                            <div className="text-xs text-vscode-text-muted text-center py-2">No upcoming deliveries</div>
+                        )}
+                    </div>
+                </div>
+
+                {/* Alerts List */}
+                <div className="bg-vscode-sidebar border border-vscode-border rounded-md flex-1 overflow-hidden flex flex-col">
+                    <div className="border-b border-vscode-border px-4 py-3">
+                        <h3 className="font-semibold text-sm flex items-center gap-2">
+                            <AlertTriangle size={16} className="text-status-warning" />
+                            Action Required
+                        </h3>
+                    </div>
+                    <div className="overflow-auto flex-1 p-2 space-y-2">
+                        {lowStockItems > 0 && (
+                            <div className="p-3 bg-vscode-bg border-l-2 border-status-error rounded-r text-xs cursor-pointer hover:bg-vscode-hover">
+                                <div className="font-semibold mb-1 text-status-error">Low Stock Alert</div>
+                                <div className="text-vscode-text-muted">{lowStockItems} items are below reorder level.</div>
+                            </div>
+                        )}
+                        {urgentPRs > 0 && (
+                            <div className="p-3 bg-vscode-bg border-l-2 border-priority-urgent rounded-r text-xs cursor-pointer hover:bg-vscode-hover">
+                                <div className="font-semibold mb-1 text-priority-urgent">Urgent PRs</div>
+                                <div className="text-vscode-text-muted">{urgentPRs} urgent requisitions pending.</div>
+                            </div>
+                        )}
+                        <div className="p-3 bg-vscode-bg border-l-2 border-status-info rounded-r text-xs cursor-pointer hover:bg-vscode-hover">
+                            <div className="font-semibold mb-1 text-status-info">System Update</div>
+                            <div className="text-vscode-text-muted">Maintenance scheduled for Saturday 10 PM.</div>
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
+
     );
 };
 

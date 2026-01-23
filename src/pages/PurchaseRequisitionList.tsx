@@ -1,23 +1,19 @@
 import React, { useState, useEffect } from 'react';
 import { Plus, Filter, Download } from 'lucide-react';
 
+import { useMockData } from '../contexts/MockContext';
+
 interface PurchaseRequisitionListProps {
     onNewPR: () => void;
 }
 
 const PurchaseRequisitionList: React.FC<PurchaseRequisitionListProps> = ({ onNewPR }) => {
+    const { prs } = useMockData();
+    const purchaseRequisitions = prs; // Use data from context
+
     const [selectedRow, setSelectedRow] = useState<number | null>(null);
     const [filterDepartment, setFilterDepartment] = useState('');
     const [filterStatus, setFilterStatus] = useState('');
-
-    const purchaseRequisitions = [
-        { prNo: 'PR-2024-001', date: '2024-01-10', department: 'IT', requestedBy: 'John Doe', priority: 'High', status: 'Pending' },
-        { prNo: 'PR-2024-002', date: '2024-01-11', department: 'HR', requestedBy: 'Sarah Williams', priority: 'Medium', status: 'Rejected' },
-        { prNo: 'PR-2024-003', date: '2024-01-11', department: 'Finance', requestedBy: 'Mike Chen', priority: 'Urgent', status: 'Pending' },
-        { prNo: 'PR-2024-004', date: '2024-01-12', department: 'Operations', requestedBy: 'Jane Smith', priority: 'Low', status: 'Approved' },
-        { prNo: 'PR-2024-005', date: '2024-01-12', department: 'Marketing', requestedBy: 'Tom Brown', priority: 'Medium', status: 'Draft' },
-        { prNo: 'PR-2024-006', date: '2024-01-12', department: 'IT', requestedBy: 'Alice Johnson', priority: 'High', status: 'Pending' },
-    ];
 
     // Keyboard navigation
     useEffect(() => {
@@ -147,7 +143,7 @@ const PurchaseRequisitionList: React.FC<PurchaseRequisitionListProps> = ({ onNew
                                 <td className="font-mono text-xs font-semibold">{pr.prNo}</td>
                                 <td className="font-mono text-xs">{pr.date}</td>
                                 <td>{pr.department}</td>
-                                <td>{pr.requestedBy}</td>
+                                <td>{pr.requestorId}</td> {/** Ideally map ID to Name */}
                                 <td>
                                     <span className={`font-semibold ${getPriorityColor(pr.priority)}`}>
                                         {pr.priority}
