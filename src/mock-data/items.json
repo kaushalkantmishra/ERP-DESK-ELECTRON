@@ -1,0 +1,14 @@
+[
+  { "id": "i1", "code": "LAP-001", "name": "Dell Latitude 5420", "category": "Electronics", "uom": "PCS", "price": 1200, "active": true, "taxRate": 18, "reorderLevel": 5 },
+  { "id": "i2", "code": "MSE-001", "name": "Logitech M185 Mouse", "category": "Accessories", "uom": "PCS", "price": 15, "active": true, "taxRate": 18, "reorderLevel": 20 },
+  { "id": "i3", "code": "MON-001", "name": "Dell 24\" Monitor", "category": "Electronics", "uom": "PCS", "price": 180, "active": true, "taxRate": 18, "reorderLevel": 5 },
+  { "id": "i4", "code": "PAP-A4", "name": "A4 Paper Ream", "category": "Stationery", "uom": "BOX", "price": 5, "active": true, "taxRate": 5, "reorderLevel": 50 },
+  { "id": "i5", "code": "INK-BLK", "name": "HP 650 Black Ink", "category": "Stationery", "uom": "PCS", "price": 25, "active": true, "taxRate": 18, "reorderLevel": 10 },
+  { "id": "i6", "code": "CHR-ERG", "name": "Ergonomic Office Chair", "category": "Furniture", "uom": "PCS", "price": 250, "active": true, "taxRate": 12, "reorderLevel": 5 },
+  { "id": "i7", "code": "DSK-STD", "name": "Standing Desk", "category": "Furniture", "uom": "PCS", "price": 450, "active": true, "taxRate": 12, "reorderLevel": 3 },
+  { "id": "i8", "code": "PRJ-4K", "name": "4K Projector", "category": "Electronics", "uom": "PCS", "price": 800, "active": true, "taxRate": 18, "reorderLevel": 2 },
+  { "id": "i9", "code": "CAB-ETH", "name": "Ethernet Cable (10m)", "category": "Accessories", "uom": "PCS", "price": 12, "active": true, "taxRate": 18, "reorderLevel": 30 },
+  { "id": "i10", "code": "WHT-BRD", "name": "Whiteboard 6x4", "category": "Furniture", "uom": "PCS", "price": 120, "active": true, "taxRate": 12, "reorderLevel": 4 },
+  { "id": "i11", "code": "COF-BEA", "name": "Coffee Beans (1kg)", "category": "Pantry", "uom": "KG", "price": 20, "active": true, "taxRate": 5, "reorderLevel": 10 },
+  { "id": "i12", "code": "CLN-SPR", "name": "Cleaning Spray", "category": "Maintenance", "uom": "LTR", "price": 8, "active": true, "taxRate": 18, "reorderLevel": 15 }
+]

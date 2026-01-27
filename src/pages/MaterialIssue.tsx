@@ -9,7 +9,7 @@ const MaterialIssue = () => {
     
     // New Request State
     const [reqItems, setReqItems] = useState<{ itemId: string; quantity: number }[]>([{ itemId: '', quantity: 1 }]);
-    const [department, setDepartment] = useState(currentUser.department || '');
+    const [department, setDepartment] = useState(currentUser?.department || '');
 
     const handleAddItem = () => {
         setReqItems([...reqItems, { itemId: '', quantity: 1 }]);
@@ -28,6 +28,8 @@ const MaterialIssue = () => {
 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
+        if (!currentUser) return;
+
         createMaterialRequest({
             requestorId: currentUser.id,
             department,

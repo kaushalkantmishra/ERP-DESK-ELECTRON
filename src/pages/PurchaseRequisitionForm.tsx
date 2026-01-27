@@ -1,14 +1,20 @@
-import React, { useState } from 'react';
-import { Save, Send, X, Plus, Trash2, Upload, File } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Save, Send, X, Plus, Trash2, Upload, File, CheckCircle, XCircle } from 'lucide-react';
+import { useParams, useNavigate } from 'react-router-dom';
 
 import { useMockData } from '../contexts/MockContext';
-import { Priority } from '../types/models';
+import { Priority, PRStatus } from '../types/models';
 
 const PurchaseRequisitionForm: React.FC = () => {
-    const { currentUser, addPR } = useMockData();
+    const { id } = useParams();
+    const navigate = useNavigate();
+    const { currentUser, addPR, updatePRStatus, prs, items: masterItems, uoms } = useMockData();
     const [activeTab, setActiveTab] = useState<'details' | 'items' | 'attachments'>('details');
+    const [isSubmitting, setIsSubmitting] = useState(false);
 
     // Form State
+    const [prNo, setPrNo] = useState('');
+    const [status, setStatus] = useState<PRStatus>('Draft');
     const [department, setDepartment] = useState(currentUser?.department || '');
     const [reqDate, setReqDate] = useState('');
     const [priority, setPriority] = useState<Priority>('Medium');
@@ -19,23 +25,66 @@ const PurchaseRequisitionForm: React.FC = () => {
     ]);
     const [attachments, setAttachments] = useState<{ id: number; name: string; size: string }[]>([]);
 
-    const handleSubmit = () => {
+    useEffect(() => {
+        if (id && prs.length > 0) {
+            const pr = prs.find(p => p.id === id || p.prNo === id);
+            if (pr) {
+                setPrNo(pr.prNo);
+                setStatus(pr.status);
+                setDepartment(pr.department);
+                setReqDate(pr.items[0]?.requiredDate || ''); // Simplification
+                setPriority(pr.priority);
+                setJustification(pr.justification);
+                setItems(pr.items.map((i, index) => ({
+                    id: index + 1,
+                    itemId: i.itemId,
+                    uom: masterItems.find(m => m.id === i.itemId)?.uom || '',
+                    qty: i.quantity,
+                    estimatedPrice: 0, // Not in PR model, would come from item master or user input?
+                    remarks: ''
+                })));
+            }
+        }
+    }, [id, prs, masterItems]);
+
+    const handleSubmit = async () => {
         if (!currentUser) return;
-        addPR({
-            requestorId: currentUser.id,
-            department,
-            date: new Date().toISOString().split('T')[0],
-            priority,
-            status: 'Submitted', // Auto submit for now
-            justification,
-            items: items.filter(i => i.itemId).map(i => ({
-                itemId: i.itemId,
-                quantity: i.qty,
-                requiredDate: reqDate
-            }))
-        });
-        alert('PR Submitted successfully!');
-        // close form or navigate back
+        setIsSubmitting(true);
+        // If ID exists, we should probably update, but for now we only have addPR. 
+        // Assuming this form is CREATE only for now unless we add updatePR.
+        // If viewing existing, maybe just "Save" updates if Draft?
+        
+        if (!id) {
+            await addPR({
+                requestorId: currentUser.id,
+                department,
+                date: new Date().toISOString().split('T')[0],
+                priority,
+                status: 'Submitted',
+                justification,
+                items: items.filter(i => i.itemId).map(i => ({
+                    itemId: i.itemId,
+                    quantity: i.qty,
+                    requiredDate: reqDate
+                }))
+            });
+            console.log('PR Created');
+            navigate('/procurement/purchase-requisition');
+        }
+        setIsSubmitting(false);
+    };
+
+    const handleStatusChange = async (newStatus: PRStatus) => {
+        if (!id) return;
+        setIsSubmitting(true);
+        // finding the PR object first to get the internal ID if 'id' param is prNo
+        const pr = prs.find(p => p.id === id || p.prNo === id);
+        if (pr) {
+             await updatePRStatus(pr.id, newStatus);
+             setStatus(newStatus);
+        }
+        setIsSubmitting(false);
+        navigate('/procurement/purchase-requisition');
     };
 
     const addItem = () => {
@@ -57,6 +106,8 @@ const PurchaseRequisitionForm: React.FC = () => {
         }
     };
 
+    const isReadOnly = !!id && status !== 'Draft';
+
     return (
         <div className="flex flex-col h-full">
             <div className="text-xs text-vscode-text-muted px-4 pt-3 pb-2 flex items-center gap-2">
@@ -64,21 +115,48 @@ const PurchaseRequisitionForm: React.FC = () => {
                 <span>/</span>
                 <span>Purchase Requisition</span>
                 <span>/</span>
-                <span className="text-vscode-text">New</span>
+                <span className="text-vscode-text">{id ? prNo : 'New'}</span>
             </div>
 
             <div className="px-4 pb-3 flex items-center gap-3 border-b border-vscode-border">
-                <button className="btn-primary flex items-center gap-2">
-                    <Save size={14} />
-                    <span>Save Draft</span>
-                </button>
-                <button className="btn-primary flex items-center gap-2" onClick={handleSubmit}>
-                    <Send size={14} />
-                    <span>Submit</span>
-                </button>
-                <button className="btn-secondary flex items-center gap-2 ml-auto">
+                {id && status === 'Submitted' && (
+                    <>
+                        <button 
+                            className="bg-green-600 hover:bg-green-700 text-white px-3 py-1.5 rounded flex items-center gap-2 text-sm"
+                            onClick={() => handleStatusChange('Approved')}
+                            disabled={isSubmitting}
+                        >
+                            <CheckCircle size={14} />
+                            <span>Approve</span>
+                        </button>
+                        <button 
+                             className="bg-red-600 hover:bg-red-700 text-white px-3 py-1.5 rounded flex items-center gap-2 text-sm"
+                             onClick={() => handleStatusChange('Rejected')}
+                             disabled={isSubmitting}
+                        >
+                            <XCircle size={14} />
+                            <span>Reject</span>
+                        </button>
+                        <div className="w-px h-6 bg-vscode-border mx-2"></div>
+                    </>
+                )}
+
+                {!isReadOnly && (
+                    <>
+                         <button className="btn-primary flex items-center gap-2">
+                            <Save size={14} />
+                            <span>Save Draft</span>
+                        </button>
+                        <button className="btn-primary flex items-center gap-2" onClick={handleSubmit} disabled={isSubmitting}>
+                            <Send size={14} />
+                            <span>{isSubmitting ? 'Submitting...' : 'Submit'}</span>
+                        </button>
+                    </>
+                )}
+               
+                <button className="btn-secondary flex items-center gap-2 ml-auto" onClick={() => navigate('/procurement/purchase-requisition')}>
                     <X size={14} />
-                    <span>Cancel</span>
+                    <span>Close</span>
                 </button>
             </div>
 
@@ -116,6 +194,7 @@ const PurchaseRequisitionForm: React.FC = () => {
                                     className="form-select"
                                     value={department}
                                     onChange={(e) => setDepartment(e.target.value)}
+                                    disabled={isReadOnly}
                                 >
                                     <option value="">Select Department</option>
                                     <option value="IT">IT</option>
@@ -139,6 +218,7 @@ const PurchaseRequisitionForm: React.FC = () => {
                                     className="input-vscode w-full"
                                     value={reqDate}
                                     onChange={(e) => setReqDate(e.target.value)}
+                                    disabled={isReadOnly}
                                 />
                             </div>
 
@@ -148,6 +228,7 @@ const PurchaseRequisitionForm: React.FC = () => {
                                     className="form-select"
                                     value={priority}
                                     onChange={(e) => setPriority(e.target.value as Priority)}
+                                    disabled={isReadOnly}
                                 >
                                     <option value="Low">Low</option>
                                     <option value="Medium">Medium</option>
@@ -164,6 +245,7 @@ const PurchaseRequisitionForm: React.FC = () => {
                                     placeholder="Provide justification..."
                                     value={justification}
                                     onChange={(e) => setJustification(e.target.value)}
+                                    disabled={isReadOnly}
                                 />
                             </div>
                         </div>
@@ -172,13 +254,15 @@ const PurchaseRequisitionForm: React.FC = () => {
 
                 {activeTab === 'items' && (
                     <div>
-                        <div className="mb-3 flex items-center justify-between">
-                            <h3 className="text-sm font-semibold">Requisition Items</h3>
-                            <button className="btn-primary flex items-center gap-2" onClick={addItem}>
-                                <Plus size={14} />
-                                <span>Add Item</span>
-                            </button>
-                        </div>
+                        {!isReadOnly && (
+                            <div className="mb-3 flex items-center justify-between">
+                                <h3 className="text-sm font-semibold">Requisition Items</h3>
+                                <button className="btn-primary flex items-center gap-2" onClick={addItem}>
+                                    <Plus size={14} />
+                                    <span>Add Item</span>
+                                </button>
+                            </div>
+                        )}
 
                         <div className="overflow-auto">
                             <table className="table-vscode">
@@ -193,43 +277,61 @@ const PurchaseRequisitionForm: React.FC = () => {
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    {items.map((item) => (
-                                        <tr key={item.id}>
+                                    {items.map((row) => (
+                                        <tr key={row.id}>
                                             <td>
-                                                <input
-                                                    type="text"
+                                                <select
                                                     className="input-vscode w-full"
-                                                    placeholder="Search item..."
-                                                    value={item.itemId}
+                                                    value={row.itemId}
+                                                    disabled={isReadOnly}
                                                     onChange={(e) => {
+                                                        const selectedItem = masterItems.find(i => i.id === e.target.value);
                                                         const newItems = [...items];
-                                                        newItems[items.indexOf(item)].itemId = e.target.value;
+                                                        const index = items.indexOf(row);
+                                                        newItems[index].itemId = e.target.value;
+                                                        if (selectedItem) {
+                                                            newItems[index].uom = selectedItem.uom;
+                                                            newItems[index].estimatedPrice = selectedItem.price;
+                                                        }
                                                         setItems(newItems);
                                                     }}
-                                                />
+                                                >
+                                                    <option value="">Select Item</option>
+                                                    {masterItems.map(item => (
+                                                        <option key={item.id} value={item.id}>
+                                                            {item.name} ({item.code})
+                                                        </option>
+                                                    ))}
+                                                </select>
                                             </td>
                                             <td>
-                                                <input
-                                                    type="text"
+                                                <select
                                                     className="input-vscode w-full"
-                                                    placeholder="UOM"
-                                                    value={item.uom}
+                                                    value={row.uom}
+                                                    disabled={isReadOnly}
                                                     onChange={(e) => {
                                                         const newItems = [...items];
-                                                        newItems[items.indexOf(item)].uom = e.target.value;
+                                                        newItems[items.indexOf(row)].uom = e.target.value;
                                                         setItems(newItems);
                                                     }}
-                                                />
+                                                >
+                                                    <option value="">Select UOM</option>
+                                                    {uoms.map(u => (
+                                                        <option key={u.id} value={u.code}>{u.name} ({u.code})</option>
+                                                    ))}
+                                                </select>
                                             </td>
                                             <td>
                                                 <input
                                                     type="number"
                                                     className="input-vscode w-full"
                                                     placeholder="0"
-                                                    value={item.qty}
+                                                    min="1"
+                                                    value={row.qty}
+                                                    disabled={isReadOnly}
                                                     onChange={(e) => {
                                                         const newItems = [...items];
-                                                        newItems[items.indexOf(item)].qty = parseInt(e.target.value) || 0;
+                                                        newItems[items.indexOf(row)].qty = parseInt(e.target.value) || 0;
                                                         setItems(newItems);
                                                     }}
                                                 />
@@ -239,10 +341,11 @@ const PurchaseRequisitionForm: React.FC = () => {
                                                     type="number"
                                                     className="input-vscode w-full"
                                                     placeholder="0.00"
-                                                    value={item.estimatedPrice}
+                                                    value={row.estimatedPrice}
+                                                    disabled={isReadOnly}
                                                     onChange={(e) => {
                                                         const newItems = [...items];
-                                                        newItems[items.indexOf(item)].estimatedPrice = parseFloat(e.target.value) || 0;
+                                                        newItems[items.indexOf(row)].estimatedPrice = parseFloat(e.target.value) || 0;
                                                         setItems(newItems);
                                                     }}
                                                 />
@@ -252,18 +355,21 @@ const PurchaseRequisitionForm: React.FC = () => {
                                                     type="text"
                                                     className="input-vscode w-full"
                                                     placeholder="Remarks"
-                                                    value={item.remarks}
+                                                    value={row.remarks}
+                                                    disabled={isReadOnly}
                                                     onChange={(e) => {
                                                         const newItems = [...items];
-                                                        newItems[items.indexOf(item)].remarks = e.target.value;
+                                                        newItems[items.indexOf(row)].remarks = e.target.value;
                                                         setItems(newItems);
                                                     }}
                                                 />
                                             </td>
                                             <td>
-                                                <button className="text-status-error hover:bg-vscode-hover p-1" onClick={() => removeItem(item.id)}>
-                                                    <Trash2 size={14} />
-                                                </button>
+                                                {!isReadOnly && (
+                                                    <button className="text-status-error hover:bg-vscode-hover p-1" onClick={() => removeItem(row.id)}>
+                                                        <Trash2 size={14} />
+                                                    </button>
+                                                )}
                                             </td>
                                         </tr>
                                     ))}

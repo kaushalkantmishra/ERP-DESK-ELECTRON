@@ -1,22 +1,25 @@
 import React, { useState } from 'react';
-import { Plus, Search, Download, Star } from 'lucide-react';
+import { Plus, Search, Star } from 'lucide-react';
 import { useMockData } from '../contexts/MockContext';
 import { Vendor } from '../types/models';
 
 const VendorMaster = () => {
     const { vendors, addVendor } = useMockData();
     const [isAdding, setIsAdding] = useState(false);
+    const [isSubmitting, setIsSubmitting] = useState(false);
     const [searchTerm, setSearchTerm] = useState('');
     const [minRating, setMinRating] = useState(0);
     const [newVendor, setNewVendor] = useState<Omit<Vendor, 'id'>>({
-        name: '', email: '', phone: '', rating: 3, address: '', taxId: '', contactPerson: '', paymentTerms: ''
+        name: '', email: '', phone: '', rating: 3, address: '', taxId: '', contactPerson: '', paymentTerms: '', active: true
     });
 
-    const handleSubmit = (e: React.FormEvent) => {
+    const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
-        addVendor(newVendor);
+        setIsSubmitting(true);
+        await addVendor(newVendor);
+        setIsSubmitting(false);
         setIsAdding(false);
-        setNewVendor({ name: '', email: '', phone: '', rating: 3, address: '', taxId: '', contactPerson: '', paymentTerms: '' });
+        setNewVendor({ name: '', email: '', phone: '', rating: 3, address: '', taxId: '', contactPerson: '', paymentTerms: '', active: true });
     };
 
     const filteredVendors = vendors.filter(v => 
@@ -68,7 +71,7 @@ const VendorMaster = () => {
             </div>
 
             {isAdding && (
-                <div className="m-4 p-4 bg-vscode-sidebar rounded border border-vscode-border">
+                <div className="m-4 p-4 bg-vscode-sidebar rounded border border-vscode-border animate-fade-in-down">
                     <h2 className="text-sm font-bold mb-3 text-vscode-text">New Vendor</h2>
                     <form onSubmit={handleSubmit} className="grid grid-cols-2 gap-4">
                         <div className="form-group">
@@ -129,6 +132,16 @@ const VendorMaster = () => {
                                 onChange={e => setNewVendor({ ...newVendor, paymentTerms: e.target.value })}
                             />
                         </div>
+                        <div className="form-group col-span-2">
+                             <label className="flex items-center gap-2 cursor-pointer">
+                                <input 
+                                    type="checkbox"
+                                    checked={newVendor.active}
+                                    onChange={e => setNewVendor({...newVendor, active: e.target.checked})}
+                                />
+                                <span className="text-sm">Active Vendor</span>
+                            </label>
+                        </div>
                         <div className="col-span-2 form-group">
                             <label className="form-label">Address</label>
                             <textarea
@@ -138,9 +151,10 @@ const VendorMaster = () => {
                                 onChange={e => setNewVendor({ ...newVendor, address: e.target.value })}
                             />
                         </div>
-                        <div className="col-span-2">
-                            <button type="submit" className="btn-primary">
-                                Save Vendor
+                        <div className="col-span-2 flex justify-end gap-2">
+                            <button type="button" onClick={() => setIsAdding(false)} className="btn-secondary py-1 px-3">Cancel</button>
+                            <button type="submit" disabled={isSubmitting} className="btn-primary py-1 px-3">
+                                {isSubmitting ? 'Saving...' : 'Save Vendor'}
                             </button>
                         </div>
                     </form>
@@ -149,8 +163,9 @@ const VendorMaster = () => {
 
             <div className="flex-1 overflow-auto">
                 <table className="table-vscode">
-                    <thead className="sticky top-0 bg-vscode-bg">
+                    <thead className="sticky top-0 bg-vscode-bg z-10">
                         <tr>
+                            <th>Status</th>
                             <th>Name</th>
                             <th>Contact</th>
                             <th>Tax ID</th>
@@ -160,7 +175,10 @@ const VendorMaster = () => {
                     </thead>
                     <tbody>
                         {filteredVendors.map(vendor => (
-                            <tr key={vendor.id} className="hover:bg-vscode-list-hover">
+                            <tr key={vendor.id} className="hover:bg-vscode-list-hover group">
+                                <td className="w-10 text-center">
+                                    <div className={`w-2 h-2 rounded-full mx-auto ${vendor.active ? 'bg-green-500' : 'bg-vscode-text-muted'}`} title={vendor.active ? 'Active' : 'Inactive'}></div>
+                                </td>
                                 <td className="font-semibold">{vendor.name}</td>
                                 <td>
                                     <div>{vendor.contactPerson}</div>
@@ -177,7 +195,11 @@ const VendorMaster = () => {
                             </tr>
                         ))}
                          {filteredVendors.length === 0 && (
-                            <tr><td colSpan={5} className="p-4 text-center text-vscode-text-muted">No vendors found</td></tr>
+                            <tr>
+                                <td colSpan={6} className="text-center py-8 text-vscode-text-muted">
+                                    No vendors found.
+                                </td>
+                            </tr>
                         )}
                     </tbody>
                 </table>

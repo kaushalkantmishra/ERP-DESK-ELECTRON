@@ -144,7 +144,7 @@ const PurchaseRequisitionList: React.FC<PurchaseRequisitionListProps> = ({ onNew
                             <tr
                                 key={pr.prNo}
                                 className={selectedRow === index ? 'active' : ''}
-                                onClick={() => setSelectedRow(index)}
+                                onClick={() => navigate(`/procurement/purchase-requisition/${pr.prNo}`)}
                             >
                                 <td className="font-mono text-xs font-semibold">{pr.prNo}</td>
                                 <td className="font-mono text-xs">{pr.date}</td>

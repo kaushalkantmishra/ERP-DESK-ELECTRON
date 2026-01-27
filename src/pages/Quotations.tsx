@@ -1,9 +1,9 @@
 import React, { useState } from 'react';
 import { useMockData } from '../contexts/MockContext';
-import { Check, X, FileText } from 'lucide-react';
+import { Check, FileText } from 'lucide-react';
 
 const Quotations: React.FC = () => {
-    const { rfqs, vendors, quotes, createPO, submitQuote, currentUser } = useMockData();
+    const { rfqs, vendors, quotes, createPO, submitQuote, items: masterItems } = useMockData();
     const [selectedRFQId, setSelectedRFQId] = useState<string | null>(null);
 
     const selectedRFQ = rfqs.find(r => r.id === selectedRFQId);
@@ -111,7 +111,10 @@ const Quotations: React.FC = () => {
                                                         <tbody>
                                                             {quote.items.map((item, i) => (
                                                                 <tr key={i}>
-                                                                    <td>{item.itemId}</td>
+                                                                    <td>
+                                                                        {masterItems.find(m => m.id === item.itemId)?.name || item.itemId}
+                                                                        <span className="text-vscode-text-muted ml-1">({masterItems.find(m => m.id === item.itemId)?.code})</span>
+                                                                    </td>
                                                                     <td className="text-right">{item.qty}</td>
                                                                     <td className="text-right">${item.unitPrice}</td>
                                                                 </tr>

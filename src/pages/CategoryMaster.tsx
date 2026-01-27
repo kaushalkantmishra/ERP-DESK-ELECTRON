@@ -3,8 +3,9 @@ import { Search, Plus, Tag } from 'lucide-react';
 import { useMockData } from '../contexts/MockContext';
 
 const CategoryMaster = () => {
-    const { categories, addCategory } = useMockData();
+    const { categories, addCategory, uoms } = useMockData();
     const [isAdding, setIsAdding] = useState(false);
+    const [isSubmitting, setIsSubmitting] = useState(false);
     const [searchTerm, setSearchTerm] = useState('');
 
     // Form State
@@ -12,9 +13,11 @@ const CategoryMaster = () => {
     const [description, setDescription] = useState('');
     const [uom, setUom] = useState('');
 
-    const handleSubmit = (e: React.FormEvent) => {
+    const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
-        addCategory({ name, description, uom });
+        setIsSubmitting(true);
+        await addCategory({ name, description, uom });
+        setIsSubmitting(false);
         setIsAdding(false);
         setName('');
         setDescription('');
@@ -61,7 +64,7 @@ const CategoryMaster = () => {
             </div>
 
             {isAdding && (
-                <div className="m-4 p-4 bg-vscode-sidebar rounded border border-vscode-border">
+                <div className="m-4 p-4 bg-vscode-sidebar rounded border border-vscode-border animate-fade-in-down">
                     <h2 className="text-sm font-bold mb-3 text-vscode-text">Add New Category</h2>
                     <form onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div className="form-group">
@@ -85,16 +88,22 @@ const CategoryMaster = () => {
                         </div>
                         <div className="form-group">
                             <label className="form-label">Default UOM</label>
-                            <input
-                                type="text"
-                                placeholder="e.g. PCS, KG"
+                            <select
                                 className="input-vscode w-full"
                                 value={uom}
                                 onChange={e => setUom(e.target.value)}
-                            />
+                            >
+                                <option value="">Select UOM</option>
+                                {uoms.map(u => (
+                                    <option key={u.id} value={u.code}>{u.name} ({u.code})</option>
+                                ))}
+                            </select>
                         </div>
-                        <div className="md:col-span-2 pt-2">
-                            <button type="submit" className="btn-primary">Save Category</button>
+                        <div className="md:col-span-2 pt-2 flex justify-end gap-2">
+                            <button type="button" onClick={() => setIsAdding(false)} className="btn-secondary py-1 px-3">Cancel</button>
+                            <button type="submit" disabled={isSubmitting} className="btn-primary py-1 px-3">
+                                {isSubmitting ? 'Saving...' : 'Save Category'}
+                            </button>
                         </div>
                     </form>
                 </div>

@@ -1,7 +1,9 @@
-import React, { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useMockData } from '../contexts/MockContext';
-import { Lock, Mail, ArrowRight, AlertCircle, ShieldCheck } from 'lucide-react';
+import { ShieldCheck, User as UserIcon, Building2, ShoppingCart, Warehouse, CreditCard, ChevronRight } from 'lucide-react';
+import { authService } from '../services/authService';
+import { User, Role } from '../types/models';
 
 const Login = () => {
     const { login } = useMockData();
@@ -9,30 +11,39 @@ const Login = () => {
     const location = useLocation();
     const from = (location.state as any)?.from?.pathname || '/dashboard';
 
-    const [email, setEmail] = useState('');
-    const [password, setPassword] = useState('');
-    const [error, setError] = useState('');
+    const [users, setUsers] = useState<User[]>([]);
     const [isLoading, setIsLoading] = useState(false);
+    const [selectedUser, setSelectedUser] = useState<User | null>(null);
 
-    const handleSubmit = async (e: React.FormEvent) => {
-        e.preventDefault();
-        setError('');
+    useEffect(() => {
+        const loadUsers = async () => {
+            const fetchedUsers = await authService.getUsers();
+            setUsers(fetchedUsers);
+        };
+        loadUsers();
+    }, []);
+
+    const handleLogin = async (user: User) => {
+        setSelectedUser(user);
         setIsLoading(true);
+        // Simulate network delay
+        await new Promise(resolve => setTimeout(resolve, 600));
+        
+        const success = await login(user.email, user.password || '');
+        if (success) {
+            navigate(from, { replace: true });
+        }
+        setIsLoading(false);
+    };
 
-        // Simulate network delay for realism
-        await new Promise(resolve => setTimeout(resolve, 800));
-
-        try {
-            const success = await login(email, password);
-            if (success) {
-                navigate(from, { replace: true });
-            } else {
-                setError('Invalid email or password');
-            }
-        } catch (err) {
-            setError('An error occurred during login');
-        } finally {
-            setIsLoading(false);
+    const getRoleIcon = (role: Role) => {
+        switch (role) {
+            case 'Admin': return <ShieldCheck className="text-purple-500" />;
+            case 'Procurement': return <ShoppingCart className="text-blue-500" />;
+            case 'Store': return <Warehouse className="text-orange-500" />;
+            case 'Dept': return <Building2 className="text-green-500" />;
+            case 'Finance': return <CreditCard className="text-emerald-500" />;
+            default: return <UserIcon className="text-gray-500" />;
         }
     };
 
@@ -52,113 +63,89 @@ const Login = () => {
                         <p className="text-xs text-vscode-text-muted uppercase tracking-wider">Secure Workspace</p>
                     </div>
                 </div>
-                <div className="hidden md:flex items-center gap-6 text-sm text-vscode-text-muted">
-                    <span className="hover:text-vscode-text cursor-pointer transition-colors">Documentation</span>
-                    <span className="hover:text-vscode-text cursor-pointer transition-colors">Support</span>
-                    <span className="hover:text-vscode-text cursor-pointer transition-colors">Contact</span>
-                </div>
             </header>
 
             {/* Main Content */}
-            <main className="flex-1 flex items-center justify-center p-4 relative z-10">
-                <div className="w-full max-w-[420px] bg-vscode-sidebar rounded-2xl shadow-2xl border border-vscode-border overflow-hidden animate-fade-in-up">
-                    
-                    {/* Login Header */}
-                    <div className="bg-vscode-activityBar/50 p-8 text-center border-b border-vscode-border relative overflow-hidden">
-                        <div className="absolute top-0 inset-x-0 h-1 bg-gradient-to-r from-transparent via-vscode-activityBar-activeBorder to-transparent opacity-50"></div>
-                        <h2 className="text-2xl font-bold text-vscode-text mb-2">Welcome Back</h2>
-                        <p className="text-vscode-text-muted text-sm">Please sign in to your account</p>
-                    </div>
-
-                    {/* Form */}
-                    <div className="p-8 pb-10">
-                        {error && (
-                            <div className="mb-6 p-4 bg-red-500/10 border border-red-500/20 rounded-lg flex items-start gap-3 text-red-500 text-sm animate-shake">
-                                <AlertCircle size={18} className="shrink-0 mt-0.5" />
-                                <span>{error}</span>
-                            </div>
-                        )}
-
-                        <form onSubmit={handleSubmit} className="space-y-6">
-                            <div className="space-y-2">
-                                <label className="text-xs font-semibold text-vscode-text-muted uppercase tracking-wider ml-1">Email Address</label>
-                                <div className="relative group">
-                                    <div className="absolute left-0 top-0 bottom-0 w-10 flex items-center justify-center text-vscode-text-muted group-focus-within:text-vscode-activityBar-activeBorder transition-colors">
-                                        <Mail size={18} />
-                                    </div>
-                                    <input
-                                        type="email"
-                                        required
-                                        value={email}
-                                        onChange={(e) => setEmail(e.target.value)}
-                                        className="w-full bg-vscode-input-bg border border-vscode-input-border rounded-lg py-3 pl-10 pr-4 text-vscode-input-fg text-sm focus:outline-none focus:border-vscode-focusBorder focus:ring-1 focus:ring-vscode-focusBorder transition-all placeholder:text-vscode-input-placeholder"
-                                        placeholder="name@company.com"
-                                    />
-                                </div>
-                            </div>
-
-                            <div className="space-y-2">
-                                <div className="flex justify-between items-center ml-1">
-                                    <label className="text-xs font-semibold text-vscode-text-muted uppercase tracking-wider">Password</label>
-                                    <a href="#" className="text-xs text-vscode-text-link hover:underline">Forgot password?</a>
-                                </div>
-                                <div className="relative group">
-                                    <div className="absolute left-0 top-0 bottom-0 w-10 flex items-center justify-center text-vscode-text-muted group-focus-within:text-vscode-activityBar-activeBorder transition-colors">
-                                        <Lock size={18} />
-                                    </div>
-                                    <input
-                                        type="password"
-                                        required
-                                        value={password}
-                                        onChange={(e) => setPassword(e.target.value)}
-                                        className="w-full bg-vscode-input-bg border border-vscode-input-border rounded-lg py-3 pl-10 pr-4 text-vscode-input-fg text-sm focus:outline-none focus:border-vscode-focusBorder focus:ring-1 focus:ring-vscode-focusBorder transition-all placeholder:text-vscode-input-placeholder"
-                                        placeholder="••••••••"
-                                    />
-                                </div>
-                            </div>
-
-                            <div className="pt-2">
-                                <button
-                                    type="submit"
-                                    disabled={isLoading}
-                                    className="w-full bg-vscode-button-bg hover:bg-vscode-button-hover text-vscode-button-fg font-semibold py-3 rounded-lg shadow-lg hover:shadow-xl hover:shadow-vscode-button-bg/20 transition-all transform active:scale-[0.98] flex items-center justify-center gap-2 disabled:opacity-70 disabled:cursor-not-allowed group duration-200"
-                                >
-                                    {isLoading ? (
-                                        <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
-                                    ) : (
-                                        <>
-                                            <span>Sign In to Dashboard</span>
-                                            <ArrowRight size={16} className="group-hover:translate-x-1 transition-transform" />
-                                        </>
-                                    )}
-                                </button>
-                            </div>
-                        </form>
-                    </div>
-
-                     {/* Login Footer */}
-                    <div className="px-8 py-4 bg-vscode-activityBar/30 border-t border-vscode-border text-center">
-                        <p className="text-xs text-vscode-text-muted">
-                            Demo: <span className="font-mono text-vscode-text mx-1">admin@erp.com</span> / <span className="font-mono text-vscode-text mx-1">password</span>
+            <main className="flex-1 relative z-10 p-6 md:p-12 overflow-hidden">
+                
+                {/* Left Side: Welcome - Now Top Left */}
+                <div className="max-w-2xl mt-12 animate-fade-in-up">
+                    <div className="space-y-4">
+                        <h2 className="text-5xl font-bold text-vscode-text tracking-tight">
+                            Select a Profile <br/>
+                            <span className="text-vscode-text-muted text-4xl">to Enter Workspace</span>
+                        </h2>
+                        <p className="text-vscode-text-muted text-lg max-w-lg leading-relaxed">
+                            Welcome to the ERP Demo. Choose a user profile to simulate different roles and workflows in a realistic environment.
                         </p>
                     </div>
-                </div>
-            </main>
-
-            {/* Footer */}
-            <footer className="px-8 py-6 border-t border-vscode-border/50 bg-vscode-bg/80 backdrop-blur-sm relative z-10 mt-auto">
-                <div className="flex flex-col md:flex-row items-center justify-between gap-4 text-xs text-vscode-text-muted">
-                    <p>&copy; 2025 Enterprise ERP Solutions. All rights reserved.</p>
-                    <div className="flex items-center gap-6">
-                        <span className="cursor-pointer hover:text-vscode-text transition-colors">Privacy Policy</span>
-                        <span className="cursor-pointer hover:text-vscode-text transition-colors">Terms of Service</span>
-                        <div className="flex items-center gap-2">
-                            <div className="w-2 h-2 rounded-full bg-green-500"></div>
-                            <span>System Operational</span>
+                    
+                    <div className="mt-12 grid grid-cols-1 sm:grid-cols-2 gap-4 max-w-xl">
+                        <div className="bg-vscode-sidebar/50 backdrop-blur-sm p-4 rounded-xl border border-vscode-border/50 hover:bg-vscode-sidebar transition-colors">
+                            <div className="flex items-center gap-3 mb-2">
+                                <div className="p-2 bg-blue-500/10 rounded-lg text-blue-500">
+                                    <ShoppingCart size={20} />
+                                </div>
+                                <h3 className="font-semibold">Procurement</h3>
+                            </div>
+                            <p className="text-xs text-vscode-text-muted">Create PRs, issue RFQs, compare quotes.</p>
+                        </div>
+                        <div className="bg-vscode-sidebar/50 backdrop-blur-sm p-4 rounded-xl border border-vscode-border/50 hover:bg-vscode-sidebar transition-colors">
+                            <div className="flex items-center gap-3 mb-2">
+                                <div className="p-2 bg-orange-500/10 rounded-lg text-orange-500">
+                                    <Warehouse size={20} />
+                                </div>
+                                <h3 className="font-semibold">Inventory</h3>
+                            </div>
+                            <p className="text-xs text-vscode-text-muted">Manage GRNs, stock levels, transfers.</p>
                         </div>
                     </div>
                 </div>
-            </footer>
+
+                {/* Right Side: User List - Now Bottom Right Fixed Card */}
+                <div className="absolute right-6 bottom-6 w-96 max-h-[calc(100vh-8rem)] bg-vscode-sidebar rounded-2xl shadow-2xl border border-vscode-border overflow-hidden animate-fade-in-up delay-100 flex flex-col z-20"> 
+                    <div className="bg-vscode-activityBar/50 p-6 border-b border-vscode-border backdrop-blur-md">
+                        <h3 className="text-lg font-bold">Available Accounts</h3>
+                        <p className="text-xs text-vscode-text-muted">Select an account to continue</p>
+                    </div>
+                    
+                    <div className="overflow-y-auto p-3 space-y-2 custom-scrollbar">
+                        {users.map((user) => (
+                            <button
+                                key={user.id}
+                                onClick={() => handleLogin(user)}
+                                disabled={isLoading}
+                                className="w-full flex items-center gap-4 p-3 rounded-xl border border-transparent hover:border-vscode-border hover:bg-vscode-list-hover transition-all group text-left relative overflow-hidden"
+                            >
+                                {isLoading && selectedUser?.id === user.id && (
+                                    <div className="absolute inset-0 bg-vscode-activityBar-activeBorder/10 animate-pulse"></div>
+                                )}
+                                
+                                <div className="w-10 h-10 rounded-full bg-vscode-bg border border-vscode-border flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform shadow-sm">
+                                    {getRoleIcon(user.role)}
+                                </div>
+                                
+                                <div className="flex-1 min-w-0">
+                                    <div className="flex items-center justify-between">
+                                        <h4 className="font-semibold text-vscode-text truncate">{user.name}</h4>
+                                        <ChevronRight size={14} className="text-vscode-text-muted opacity-0 group-hover:opacity-100 -translate-x-2 group-hover:translate-x-0 transition-all" />
+                                    </div>
+                                    <div className="flex items-center gap-2 mt-0.5">
+                                        <span className="text-[10px] px-1.5 py-0 rounded-full bg-vscode-activityBar/20 text-vscode-activityBar-activeBorder border border-vscode-activityBar-activeBorder/30 font-medium uppercase tracking-wide">
+                                            {user.role}
+                                        </span>
+                                        <span className="text-[11px] text-vscode-text-muted truncate">{user.department}</span>
+                                    </div>
+                                </div>
+                            </button>
+                        ))}
+                    </div>
+                    
+                    <div className="p-3 bg-vscode-activityBar/30 border-t border-vscode-border text-center text-[10px] text-vscode-text-muted">
+                        Secure Client v1.0.0
+                    </div>
+                </div>
+            </main>
         </div>
     );
 };

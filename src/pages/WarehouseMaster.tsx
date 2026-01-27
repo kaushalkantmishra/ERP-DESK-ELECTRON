@@ -6,21 +6,25 @@ import { Warehouse } from '../types/models';
 const WarehouseMaster = () => {
     const { warehouses, addWarehouse } = useMockData();
     const [isAdding, setIsAdding] = useState(false);
+    const [isSubmitting, setIsSubmitting] = useState(false);
     const [searchTerm, setSearchTerm] = useState('');
     const [newWarehouse, setNewWarehouse] = useState<Omit<Warehouse, 'id'>>({
-        name: '', location: '', managerId: ''
+        code: '', name: '', location: '', managerId: ''
     });
 
-    const handleSubmit = (e: React.FormEvent) => {
+    const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
-        addWarehouse(newWarehouse);
+        setIsSubmitting(true);
+        await addWarehouse(newWarehouse);
+        setIsSubmitting(false);
         setIsAdding(false);
-        setNewWarehouse({ name: '', location: '', managerId: '' });
+        setNewWarehouse({ code: '', name: '', location: '', managerId: '' });
     };
 
     const filteredWarehouses = warehouses.filter(wh => 
         wh.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
-        wh.location.toLowerCase().includes(searchTerm.toLowerCase())
+        wh.location.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        wh.code?.toLowerCase().includes(searchTerm.toLowerCase())
     );
 
     return (
@@ -55,9 +59,20 @@ const WarehouseMaster = () => {
             </div>
 
             {isAdding && (
-                <div className="m-4 p-4 bg-vscode-sidebar rounded border border-vscode-border">
+                <div className="m-4 p-4 bg-vscode-sidebar rounded border border-vscode-border animate-fade-in-down">
                     <h2 className="text-sm font-bold mb-3 text-vscode-text">New Warehouse</h2>
                     <form onSubmit={handleSubmit} className="grid grid-cols-2 gap-4">
+                        <div className="form-group">
+                            <label className="form-label">Warehouse Code</label>
+                            <input
+                                required
+                                type="text"
+                                className="input-vscode w-full"
+                                value={newWarehouse.code}
+                                onChange={e => setNewWarehouse({ ...newWarehouse, code: e.target.value })}
+                                placeholder="e.g. WH-01"
+                            />
+                        </div>
                         <div className="form-group">
                             <label className="form-label">Warehouse Name</label>
                             <input
@@ -88,9 +103,10 @@ const WarehouseMaster = () => {
                             />
                         </div>
                         
-                        <div className="col-span-2">
-                            <button type="submit" className="btn-primary">
-                                Save Warehouse
+                        <div className="col-span-2 flex justify-end gap-2">
+                            <button type="button" onClick={() => setIsAdding(false)} className="btn-secondary py-1 px-3">Cancel</button>
+                            <button type="submit" disabled={isSubmitting} className="btn-primary py-1 px-3">
+                                {isSubmitting ? 'Saving...' : 'Save Warehouse'}
                             </button>
                         </div>
                     </form>
@@ -99,8 +115,9 @@ const WarehouseMaster = () => {
 
             <div className="flex-1 overflow-auto">
                 <table className="table-vscode">
-                    <thead className="sticky top-0 bg-vscode-bg">
+                    <thead className="sticky top-0 bg-vscode-bg z-10">
                         <tr>
+                            <th>Code</th>
                             <th>Name</th>
                             <th>Location</th>
                             <th>Manager</th>
@@ -108,7 +125,8 @@ const WarehouseMaster = () => {
                     </thead>
                     <tbody>
                         {filteredWarehouses.map(wh => (
-                            <tr key={wh.id} className="hover:bg-vscode-list-hover">
+                            <tr key={wh.id} className="hover:bg-vscode-list-hover group">
+                                <td className="font-mono text-xs font-semibold text-vscode-accent">{wh.code || '-'}</td>
                                 <td className="font-semibold flex items-center gap-2">
                                     <WarehouseIcon size={14} className="text-vscode-text-muted" />
                                     {wh.name}
@@ -118,7 +136,7 @@ const WarehouseMaster = () => {
                             </tr>
                         ))}
                          {filteredWarehouses.length === 0 && (
-                            <tr><td colSpan={3} className="p-4 text-center text-vscode-text-muted">No warehouses found</td></tr>
+                            <tr><td colSpan={4} className="p-4 text-center text-vscode-text-muted">No warehouses found</td></tr>
                         )}
                     </tbody>
                 </table>

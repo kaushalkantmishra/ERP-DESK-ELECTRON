@@ -1,0 +1,31 @@
+[
+  {
+    "id": "po1",
+    "poNo": "PO-2026-001",
+    "rfqId": "rfq3",
+    "vendorId": "v1",
+    "date": "2026-01-15",
+    "items": [
+        { "itemId": "i1", "qty": 5, "unitPrice": 1150 },
+        { "itemId": "i2", "qty": 5, "unitPrice": 14 },
+        { "itemId": "i3", "qty": 10, "unitPrice": 175 }
+    ],
+    "totalAmount": 7800.00,
+    "status": "Sent",
+    "deliveryDate": "2026-02-02"
+  },
+  {
+    "id": "po2",
+    "poNo": "PO-2026-002",
+    "rfqId": "rfq1",
+    "vendorId": "v2",
+    "date": "2026-01-18",
+    "items": [
+        { "itemId": "i4", "qty": 50, "unitPrice": 5 },
+        { "itemId": "i5", "qty": 20, "unitPrice": 5 }
+    ],
+    "totalAmount": 350.00,
+    "status": "Draft",
+    "deliveryDate": "2026-02-05"
+  }
+]

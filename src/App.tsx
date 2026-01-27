@@ -25,6 +25,8 @@ import VendorInvoice from './pages/VendorInvoice';
 import VendorMaster from './pages/VendorMaster';
 import Reports from './pages/Reports';
 import AuditLog from './pages/AuditLog';
+import UomMaster from './pages/UomMaster';
+import ApprovalMatrix from './pages/ApprovalMatrix';
 
 
 
@@ -110,10 +112,13 @@ function App() {
                                                     <Route path="/procurement/vendors" element={<VendorMaster />} />
 
                                                     <Route path="/inventory/item-master" element={<ItemMaster />} />
+import UomMaster from './pages/UomMaster';
                                                     <Route path="/master/items" element={<ItemMaster />} />
                                                     <Route path="/master/categories" element={<CategoryMaster />} />
+                                                    <Route path="/master/uom" element={<UomMaster />} />
                                                     <Route path="/master/warehouses" element={<WarehouseMaster />} />
                                                     <Route path="/master/vendors" element={<VendorMaster />} />
+                                                    <Route path="/master/approvals" element={<ApprovalMatrix />} />
                                                     <Route path="/inventory/warehouses" element={<WarehouseMaster />} />
                                                     <Route path="/inventory/stock-management" element={<StockManagement />} />
                                                     <Route path="/inventory/transfer" element={<StockTransfer />} />

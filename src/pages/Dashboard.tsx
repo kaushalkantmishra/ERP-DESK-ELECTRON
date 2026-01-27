@@ -66,7 +66,7 @@ const Dashboard: React.FC = () => {
             <div className="flex items-center justify-between">
                 <div className="text-xs text-vscode-text-muted">
                     <span className="text-vscode-text text-lg font-semibold">Dashboard</span>
-                    <div className="mt-1">Welcome back, {currentUser.name} ({currentUser.role})</div>
+                    <div className="mt-1">Welcome back, {currentUser?.name} ({currentUser?.role})</div>
                 </div>
 
                 <div className="flex gap-2">

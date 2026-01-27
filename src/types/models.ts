@@ -11,6 +11,12 @@ export interface User {
 }
 
 // Master Data
+export interface Uom {
+    id: string;
+    code: string;
+    name: string;
+}
+
 export interface Item {
     id: string;
     code: string;
@@ -18,8 +24,9 @@ export interface Item {
     category: string;
     uom: string;
     price: number; // Standard/Last Purchase Price
-    // Deprecated: currentStock (moved to StockLevel per warehouse)
-    // keeping for backward compatibility if needed, but logic should use StockLevel
+    active: boolean;
+    taxRate?: number;
+    reorderLevel?: number;
 }
 
 export interface Vendor {
@@ -32,6 +39,7 @@ export interface Vendor {
     taxId?: string;
     paymentTerms?: string;
     contactPerson?: string;
+    active: boolean;
 }
 
 export interface Category {
@@ -44,6 +52,7 @@ export interface Category {
 export interface Warehouse {
     id: string;
     name: string;
+    code?: string;
     location: string;
     managerId?: string;
 }

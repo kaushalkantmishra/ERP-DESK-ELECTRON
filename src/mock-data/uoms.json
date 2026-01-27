@@ -1,0 +1,8 @@
+[
+  { "id": "1", "code": "PCS", "name": "Pieces" },
+  { "id": "2", "code": "KG", "name": "Kilograms" },
+  { "id": "3", "code": "LTR", "name": "Liters" },
+  { "id": "4", "code": "BOX", "name": "Box" },
+  { "id": "5", "code": "SET", "name": "Set" },
+  { "id": "6", "code": "M", "name": "Meter" }
+]
