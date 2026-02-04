@@ -1,7 +1,7 @@
 [
   { "id": "sl1", "itemId": "i1", "warehouseId": "w1", "quantity": 15, "minStockLevel": 5 },
   { "id": "sl2", "itemId": "i2", "warehouseId": "w1", "quantity": 50, "minStockLevel": 20 },
-  { "id": "sl3", "itemId": "i3", "warehouseId": "w1", "quantity": 8, "minStockLevel": 5 },
+  { "id": "sl3", "itemId": "i3", "warehouseId": "w1", "quantity": 3, "minStockLevel": 5 },
   { "id": "sl4", "itemId": "i4", "warehouseId": "w2", "quantity": 200, "minStockLevel": 50 },
   { "id": "sl5", "itemId": "i5", "warehouseId": "w2", "quantity": 30, "minStockLevel": 10 },
   { "id": "sl6", "itemId": "i6", "warehouseId": "w1", "quantity": 12, "minStockLevel": 5 },
