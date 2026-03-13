@@ -1,10 +1,14 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Search } from 'lucide-react';
-import { useMockData } from '../contexts/MockContext';
-import { StockLevel } from '../types/models';
+import { inventoryService } from '../services/inventoryService';
+import { masterService } from '../services/masterService';
+import { StockLevel, Item, Warehouse } from '../types/models';
 
 const StockManagement = () => {
-    const { items, warehouses, stockLevels, createStockTransaction } = useMockData();
+    const [items, setItems] = useState<Item[]>([]);
+    const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
+    const [stockLevels, setStockLevels] = useState<StockLevel[]>([]);
+    const [isLoading, setIsLoading] = useState(true);
     const [filterItem, setFilterItem] = useState('');
     const [filterWarehouse, setFilterWarehouse] = useState('');
 
@@ -13,21 +17,48 @@ const StockManagement = () => {
     const [adjQty, setAdjQty] = useState(0);
     const [adjReason, setAdjReason] = useState('');
 
-    const handleAdjustment = (e: React.FormEvent) => {
+    useEffect(() => {
+        fetchData();
+    }, []);
+
+    const fetchData = async () => {
+        try {
+            setIsLoading(true);
+            const [itemData, whData, stockData] = await Promise.all([
+                masterService.getItems(),
+                masterService.getWarehouses(),
+                inventoryService.getStockLevels()
+            ]);
+            setItems(itemData);
+            setWarehouses(whData);
+            setStockLevels(stockData);
+        } catch (error) {
+            console.error('Error fetching stock data:', error);
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    const handleAdjustment = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!adjustingStock) return;
 
-        createStockTransaction({
-            itemId: adjustingStock.itemId,
-            type: 'Adjustment',
-            quantity: adjQty, // Quantity to ADD (negative to subtract)
-            sourceWarehouseId: adjustingStock.warehouseId, // Warehouse being adjusted
-            notes: adjReason
-        });
+        try {
+            await inventoryService.createStockTransaction({
+                itemId: adjustingStock.itemId,
+                type: 'Adjustment',
+                quantity: adjQty, // Quantity to ADD (negative to subtract)
+                sourceWarehouseId: adjustingStock.warehouseId, // Warehouse being adjusted
+                notes: adjReason
+            });
 
-        setAdjustingStock(null);
-        setAdjQty(0);
-        setAdjReason('');
+            await fetchData();
+            setAdjustingStock(null);
+            setAdjQty(0);
+            setAdjReason('');
+        } catch (error) {
+            console.error('Error adjusting stock:', error);
+        }
     };
 
     const filteredLevels = stockLevels.filter(sl => {
@@ -38,7 +69,12 @@ const StockManagement = () => {
     });
 
     return (
-        <div className="flex flex-col h-full">
+        <div className="flex flex-col h-full relative">
+            {isLoading && (
+                <div className="absolute inset-0 bg-vscode-bg/50 backdrop-blur-sm z-50 flex items-center justify-center">
+                    <div className="text-vscode-text-muted">Updating Inventory...</div>
+                </div>
+            )}
             {/* Breadcrumb */}
             <div className="text-xs text-vscode-text-muted px-4 pt-3 pb-2 flex items-center gap-2">
                 <span>Inventory</span>
@@ -110,7 +146,7 @@ const StockManagement = () => {
                 </table>
             </div>
 
-             <div className="px-4 py-1.5 border-t border-vscode-border bg-vscode-sidebar text-xs text-vscode-text-muted">
+            <div className="px-4 py-1.5 border-t border-vscode-border bg-vscode-sidebar text-xs text-vscode-text-muted">
                 <span>{filteredLevels.length} records</span>
             </div>
 
@@ -120,11 +156,11 @@ const StockManagement = () => {
                     <div className="bg-vscode-bg border border-vscode-border p-6 rounded shadow-lg w-96">
                         <h2 className="text-lg font-bold text-vscode-text mb-4">Adjust Stock</h2>
                         <div className="mb-4 text-sm text-vscode-text-muted bg-vscode-sidebar p-2 rounded">
-                            Item: <span className="text-vscode-text font-semibold">{items.find(i => i.id === adjustingStock.itemId)?.name}</span> <br/>
-                            Warehouse: <span className="text-vscode-text font-semibold">{warehouses.find(w => w.id === adjustingStock.warehouseId)?.name}</span> <br/>
+                            Item: <span className="text-vscode-text font-semibold">{items.find(i => i.id === adjustingStock.itemId)?.name}</span> <br />
+                            Warehouse: <span className="text-vscode-text font-semibold">{warehouses.find(w => w.id === adjustingStock.warehouseId)?.name}</span> <br />
                             Current: <span className="text-vscode-text font-mono">{adjustingStock.quantity}</span>
                         </div>
-                        
+
                         <form onSubmit={handleAdjustment}>
                             <div className="mb-4 form-group">
                                 <label className="form-label">Adjustment Quantity (+/-)</label>

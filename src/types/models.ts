@@ -130,11 +130,16 @@ export interface Quotation {
     id: string;
     rfqId: string;
     vendorId: string;
-    items: { itemId: string; qty: number; unitPrice: number }[];
+    quotationItems: {
+        itemId: string;
+        quantity: number;
+        unitPrice: number;
+    }[];
     totalAmount: number;
     deliveryDate: string;
     submittedDate: string;
     status: 'Pending' | 'Accepted' | 'Rejected';
+    vendor?: Vendor;
 }
 
 // Purchase Order

@@ -1,19 +1,57 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Search, Plus } from 'lucide-react';
-import { useMockData } from '../contexts/MockContext';
-import { Item } from '../types/models';
+import { masterService } from '../services/masterService';
+import { inventoryService } from '../services/inventoryService';
+import { Item, Category, Uom, StockLevel } from '../types/models';
 
 const ItemMaster: React.FC = () => {
-    const { items, addItem, stockLevels, uoms } = useMockData();
+    const [items, setItems] = useState<Item[]>([]);
+    const [categories, setCategories] = useState<Category[]>([]);
+    const [uoms, setUoms] = useState<Uom[]>([]);
+    const [stockLevels, setStockLevels] = useState<StockLevel[]>([]);
+    const [isLoading, setIsLoading] = useState(true);
     const [searchQuery, setSearchQuery] = useState('');
     const [isAdding, setIsAdding] = useState(false);
     const [isSubmitting, setIsSubmitting] = useState(false);
-    
-    // New Item State
-    const [newItem, setNewItem] = useState<Omit<Item, 'id'>>({
-        code: '', name: '', category: '', uom: '', price: 0, 
+
+    // New Item State (Frontend-friendly)
+    const [newItem, setNewItem] = useState<{
+        code: string;
+        name: string;
+        categoryId: string;
+        uomId: string;
+        price: number;
+        active: boolean;
+        taxRate: number;
+        reorderLevel: number;
+    }>({
+        code: '', name: '', categoryId: '', uomId: '', price: 0,
         active: true, taxRate: 0, reorderLevel: 10
     });
+
+    useEffect(() => {
+        fetchData();
+    }, []);
+
+    const fetchData = async () => {
+        try {
+            setIsLoading(true);
+            const [itemData, catData, uomData, stockData] = await Promise.all([
+                masterService.getItems(),
+                masterService.getCategories(),
+                masterService.getUoms(),
+                inventoryService.getStockLevels()
+            ]);
+            setItems(itemData);
+            setCategories(catData);
+            setUoms(uomData);
+            setStockLevels(stockData);
+        } catch (error) {
+            console.error('Error fetching data:', error);
+        } finally {
+            setIsLoading(false);
+        }
+    };
 
     const filteredItems = items.filter(item =>
         item.code.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -24,10 +62,16 @@ const ItemMaster: React.FC = () => {
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         setIsSubmitting(true);
-        await addItem(newItem);
-        setIsSubmitting(false);
-        setIsAdding(false);
-        setNewItem({ code: '', name: '', category: '', uom: '', price: 0, active: true, taxRate: 0, reorderLevel: 10 });
+        try {
+            await masterService.addItem(newItem as any); // Backend expects IDs
+            await fetchData();
+            setIsAdding(false);
+            setNewItem({ code: '', name: '', categoryId: '', uomId: '', price: 0, active: true, taxRate: 0, reorderLevel: 10 });
+        } catch (error) {
+            console.error('Error adding item:', error);
+        } finally {
+            setIsSubmitting(false);
+        }
     };
 
     const getTotalStock = (itemId: string) => {
@@ -58,7 +102,7 @@ const ItemMaster: React.FC = () => {
                     />
                 </div>
 
-                <button 
+                <button
                     onClick={() => setIsAdding(!isAdding)}
                     className="btn-primary flex items-center gap-2 ml-auto"
                 >
@@ -73,86 +117,91 @@ const ItemMaster: React.FC = () => {
                     <form onSubmit={handleSubmit} className="grid grid-cols-2 lg:grid-cols-4 gap-4">
                         <div>
                             <label className="label-vscode">Item Code</label>
-                            <input 
+                            <input
                                 required
-                                className="input-vscode w-full" 
+                                className="input-vscode w-full"
                                 value={newItem.code}
-                                onChange={e => setNewItem({...newItem, code: e.target.value})}
+                                onChange={e => setNewItem({ ...newItem, code: e.target.value })}
                                 placeholder="e.g. LAP-001"
                             />
                         </div>
                         <div className="lg:col-span-2">
                             <label className="label-vscode">Item Name</label>
-                            <input 
+                            <input
                                 required
-                                className="input-vscode w-full" 
+                                className="input-vscode w-full"
                                 value={newItem.name}
-                                onChange={e => setNewItem({...newItem, name: e.target.value})}
+                                onChange={e => setNewItem({ ...newItem, name: e.target.value })}
                                 placeholder="Product Name"
                             />
                         </div>
                         <div>
                             <label className="label-vscode">Category</label>
-                            <input 
+                            <select
                                 required
-                                className="input-vscode w-full" 
-                                value={newItem.category}
-                                onChange={e => setNewItem({...newItem, category: e.target.value})}
-                            />
-                        </div>
-                        <div>
-                            <label className="label-vscode">UOM</label>
-                            <select 
-                                required
-                                className="input-vscode w-full" 
-                                value={newItem.uom}
-                                onChange={e => setNewItem({...newItem, uom: e.target.value})}
+                                className="input-vscode w-full"
+                                value={newItem.categoryId}
+                                onChange={e => setNewItem({ ...newItem, categoryId: e.target.value })}
                             >
-                                <option value="">Select UOM</option>
-                                {uoms.map(u => (
-                                    <option key={u.id} value={u.code}>{u.name} ({u.code})</option>
+                                <option value="">Select Category</option>
+                                {categories.map(c => (
+                                    <option key={c.id} value={c.id}>{c.name}</option>
                                 ))}
                             </select>
                         </div>
-                         <div>
+                        <div>
+                            <label className="label-vscode">UOM</label>
+                            <select
+                                required
+                                className="input-vscode w-full"
+                                value={newItem.uomId}
+                                onChange={e => setNewItem({ ...newItem, uomId: e.target.value })}
+                            >
+                                <option value="">Select UOM</option>
+                                {uoms.map(u => (
+                                    <option key={u.id} value={u.id}>{u.name} ({u.code})</option>
+                                ))}
+                            </select>
+                        </div>
+                        <div>
                             <label className="label-vscode">Standard Price ($)</label>
-                            <input 
+                            <input
                                 type="number"
                                 required
-                                className="input-vscode w-full" 
+                                className="input-vscode w-full"
                                 value={newItem.price}
-                                onChange={e => setNewItem({...newItem, price: Number(e.target.value)})}
+                                onChange={e => setNewItem({ ...newItem, price: Number(e.target.value) })}
                             />
                         </div>
                         <div>
                             <label className="label-vscode">Tax Rate (%)</label>
-                            <input 
+                            <input
                                 type="number"
-                                className="input-vscode w-full" 
+                                className="input-vscode w-full"
                                 value={newItem.taxRate}
-                                onChange={e => setNewItem({...newItem, taxRate: Number(e.target.value)})}
+                                onChange={e => setNewItem({ ...newItem, taxRate: Number(e.target.value) })}
                             />
                         </div>
                         <div>
                             <label className="label-vscode">Reorder Level</label>
-                            <input 
+                            <input
                                 type="number"
-                                className="input-vscode w-full" 
+                                className="input-vscode w-full"
                                 value={newItem.reorderLevel}
-                                onChange={e => setNewItem({...newItem, reorderLevel: Number(e.target.value)})}
+                                onChange={e => setNewItem({ ...newItem, reorderLevel: Number(e.target.value) })}
                             />
                         </div>
                         <div className="flex items-end">
                             <label className="flex items-center gap-2 cursor-pointer mb-2">
-                                <input 
+                                <input
                                     type="checkbox"
                                     checked={newItem.active}
-                                    onChange={e => setNewItem({...newItem, active: e.target.checked})}
+                                    onChange={e => setNewItem({ ...newItem, active: e.target.checked })}
                                 />
                                 <span className="text-sm">Active Configuration</span>
                             </label>
                         </div>
-                        
+
                         <div className="col-span-2 lg:col-span-4 flex justify-end gap-2 mt-2">
                             <button type="button" onClick={() => setIsAdding(false)} className="btn-secondary py-1 px-3">Cancel</button>
                             <button type="submit" disabled={isSubmitting} className="btn-primary py-1 px-3">
@@ -178,7 +227,9 @@ const ItemMaster: React.FC = () => {
                         </tr>
                     </thead>
                     <tbody>
-                        {filteredItems.map((item) => (
+                        {isLoading ? (
+                            <tr><td colSpan={8} className="p-4 text-center text-vscode-text-muted">Loading items...</td></tr>
+                        ) : filteredItems.map((item) => (
                             <tr key={item.id} className="hover:bg-vscode-list-hover group">
                                 <td className="w-10 text-center">
                                     <div className={`w-2 h-2 rounded-full mx-auto ${item.active ? 'bg-green-500' : 'bg-vscode-text-muted'}`} title={item.active ? 'Active' : 'Inactive'}></div>
@@ -188,11 +239,11 @@ const ItemMaster: React.FC = () => {
                                 <td>{item.category}</td>
                                 <td className="font-mono text-xs">{item.uom}</td>
                                 <td className="font-mono font-bold">{getTotalStock(item.id)}</td>
-                                <td className="font-mono text-xs">${item.price.toFixed(2)}</td>
+                                <td className="font-mono text-xs">${item.price?.toFixed(2)}</td>
                                 <td className="font-mono text-xs text-vscode-text-muted">{item.reorderLevel || '-'}</td>
                             </tr>
                         ))}
-                        {filteredItems.length === 0 && (
+                        {!isLoading && filteredItems.length === 0 && (
                             <tr>
                                 <td colSpan={8} className="text-center py-8 text-vscode-text-muted">
                                     No items found. Add a new item to get started.

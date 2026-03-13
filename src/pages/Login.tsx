@@ -1,12 +1,12 @@
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { useMockData } from '../contexts/MockContext';
+import { useAppContext } from '../contexts/AppContext';
 import { ShieldCheck, User as UserIcon, Building2, ShoppingCart, Warehouse, CreditCard, ChevronRight } from 'lucide-react';
 import { authService } from '../services/authService';
 import { User, Role } from '../types/models';
 
-const Login = () => {
-    const { login } = useMockData();
+const Login: React.FC = () => {
+    const { login } = useAppContext();
     const navigate = useNavigate();
     const location = useLocation();
     const from = (location.state as any)?.from?.pathname || '/dashboard';
@@ -28,10 +28,15 @@ const Login = () => {
         setIsLoading(true);
         // Simulate network delay
         await new Promise(resolve => setTimeout(resolve, 600));
-        
-        const success = await login(user.email, user.password || '');
+
+        // Using "admin123" as the default password for seeded accounts
+        const password = user.password || 'admin123';
+        const success = await login(user.email, password);
+
         if (success) {
             navigate(from, { replace: true });
+        } else {
+            alert('Login failed. Please ensure the backend is running and seeded.');
         }
         setIsLoading(false);
     };
@@ -51,7 +56,7 @@ const Login = () => {
         <div className="min-h-screen bg-vscode-bg flex flex-col relative overflow-hidden font-sans text-vscode-text">
             {/* Background Texture */}
             <div className="absolute inset-0 bg-grid-pattern opacity-[0.03] pointer-events-none"></div>
-            
+
             {/* Header */}
             <header className="px-8 py-6 flex items-center justify-between relative z-10 border-b border-vscode-border/50 bg-vscode-bg/80 backdrop-blur-sm">
                 <div className="flex items-center gap-3">
@@ -67,19 +72,19 @@ const Login = () => {
 
             {/* Main Content */}
             <main className="flex-1 relative z-10 p-6 md:p-12 overflow-hidden">
-                
+
                 {/* Left Side: Welcome - Now Top Left */}
                 <div className="max-w-2xl mt-12 animate-fade-in-up">
                     <div className="space-y-4">
                         <h2 className="text-5xl font-bold text-vscode-text tracking-tight">
-                            Select a Profile <br/>
+                            Select a Profile <br />
                             <span className="text-vscode-text-muted text-4xl">to Enter Workspace</span>
                         </h2>
                         <p className="text-vscode-text-muted text-lg max-w-lg leading-relaxed">
                             Welcome to the ERP Demo. Choose a user profile to simulate different roles and workflows in a realistic environment.
                         </p>
                     </div>
-                    
+
                     <div className="mt-12 grid grid-cols-1 sm:grid-cols-2 gap-4 max-w-xl">
                         <div className="bg-vscode-sidebar/50 backdrop-blur-sm p-4 rounded-xl border border-vscode-border/50 hover:bg-vscode-sidebar transition-colors">
                             <div className="flex items-center gap-3 mb-2">
@@ -103,12 +108,12 @@ const Login = () => {
                 </div>
 
                 {/* Right Side: User List - Now Bottom Right Fixed Card */}
-                <div className="absolute right-6 bottom-6 w-96 max-h-[calc(100vh-8rem)] bg-vscode-sidebar rounded-2xl shadow-2xl border border-vscode-border overflow-hidden animate-fade-in-up delay-100 flex flex-col z-20"> 
+                <div className="absolute right-6 bottom-6 w-96 max-h-[calc(100vh-8rem)] bg-vscode-sidebar rounded-2xl shadow-2xl border border-vscode-border overflow-hidden animate-fade-in-up delay-100 flex flex-col z-20">
                     <div className="bg-vscode-activityBar/50 p-6 border-b border-vscode-border backdrop-blur-md">
                         <h3 className="text-lg font-bold">Available Accounts</h3>
                         <p className="text-xs text-vscode-text-muted">Select an account to continue</p>
                     </div>
-                    
+
                     <div className="overflow-y-auto p-3 space-y-2 custom-scrollbar">
                         {users.map((user) => (
                             <button
@@ -120,11 +125,11 @@ const Login = () => {
                                 {isLoading && selectedUser?.id === user.id && (
                                     <div className="absolute inset-0 bg-vscode-activityBar-activeBorder/10 animate-pulse"></div>
                                 )}
-                                
+
                                 <div className="w-10 h-10 rounded-full bg-vscode-bg border border-vscode-border flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform shadow-sm">
                                     {getRoleIcon(user.role)}
                                 </div>
-                                
+
                                 <div className="flex-1 min-w-0">
                                     <div className="flex items-center justify-between">
                                         <h4 className="font-semibold text-vscode-text truncate">{user.name}</h4>
@@ -140,7 +145,7 @@ const Login = () => {
                             </button>
                         ))}
                     </div>
-                    
+
                     <div className="p-3 bg-vscode-activityBar/30 border-t border-vscode-border text-center text-[10px] text-vscode-text-muted">
                         Secure Client v1.0.0
                     </div>

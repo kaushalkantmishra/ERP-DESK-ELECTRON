@@ -1,62 +1,54 @@
 import { Item, Vendor, Warehouse, Category, Uom } from '../types/models';
-import itemsData from '../mock-data/items.json';
-import vendorsData from '../mock-data/vendors.json';
-import warehousesData from '../mock-data/warehouses.json';
-import categoriesData from '../mock-data/categories.json';
-import uomsData from '../mock-data/uoms.json';
-import { simulateApiCall } from './api';
-
-// In-memory state
-let items: Item[] = [...itemsData] as Item[];
-let vendors: Vendor[] = [...vendorsData] as Vendor[];
-let warehouses: Warehouse[] = [...warehousesData] as Warehouse[];
-let categories: Category[] = [...categoriesData] as Category[];
-let uoms: Uom[] = [...uomsData] as Uom[];
+import api from './api';
 
 export const masterService = {
     // Items
-    getItems: async (): Promise<Item[]> => simulateApiCall(items),
-    addItem: async (item: Omit<Item, 'id'>): Promise<Item> => {
-        const newItem = { ...item, id: `i${Date.now()}` };
-        items.push(newItem);
-        return simulateApiCall(newItem);
+    getItems: async (): Promise<Item[]> => {
+        const response = await api.get('/master/items');
+        return response.data;
     },
-    updateItem: async (id: string, updates: Partial<Item>): Promise<Item> => {
-        const index = items.findIndex(i => i.id === id);
-        if (index === -1) throw new Error('Item not found');
-        items[index] = { ...items[index], ...updates };
-        return simulateApiCall(items[index]);
+    addItem: async (item: Omit<Item, 'id'>): Promise<Item> => {
+        const response = await api.post('/master/items', item);
+        return response.data;
     },
 
     // Vendors
-    getVendors: async (): Promise<Vendor[]> => simulateApiCall(vendors),
+    getVendors: async (): Promise<Vendor[]> => {
+        const response = await api.get('/master/vendors');
+        return response.data;
+    },
     addVendor: async (vendor: Omit<Vendor, 'id'>): Promise<Vendor> => {
-        const newVendor = { ...vendor, id: `v${Date.now()}` };
-        vendors.push(newVendor);
-        return simulateApiCall(newVendor);
+        const response = await api.post('/master/vendors', vendor);
+        return response.data;
     },
 
     // Warehouses
-    getWarehouses: async (): Promise<Warehouse[]> => simulateApiCall(warehouses),
+    getWarehouses: async (): Promise<Warehouse[]> => {
+        const response = await api.get('/master/warehouses');
+        return response.data;
+    },
     addWarehouse: async (wh: Omit<Warehouse, 'id'>): Promise<Warehouse> => {
-        const newWh = { ...wh, id: `w${Date.now()}` };
-        warehouses.push(newWh);
-        return simulateApiCall(newWh);
+        const response = await api.post('/master/warehouses', wh);
+        return response.data;
     },
 
     // Categories
-    getCategories: async (): Promise<Category[]> => simulateApiCall(categories),
-    addCategory: async (cat: Omit<Category, 'id'>): Promise<Category> => {
-        const newCat = { ...cat, id: `c${Date.now()}` };
-        categories.push(newCat);
-        return simulateApiCall(newCat);
+    getCategories: async (): Promise<Category[]> => {
+        const response = await api.get('/master/categories');
+        return response.data;
+    },
+    addCategory: async (category: Omit<Category, 'id'>): Promise<Category> => {
+        const response = await api.post('/master/categories', category);
+        return response.data;
     },
 
-    // UOMs
-    getUoms: async (): Promise<Uom[]> => simulateApiCall(uoms),
+    // UoMs
+    getUoms: async (): Promise<Uom[]> => {
+        const response = await api.get('/master/uoms');
+        return response.data;
+    },
     addUom: async (uom: Omit<Uom, 'id'>): Promise<Uom> => {
-        const newUom = { ...uom, id: `u${Date.now()}` };
-        uoms.push(newUom);
-        return simulateApiCall(newUom);
+        const response = await api.post('/master/uoms', uom);
+        return response.data;
     }
 };

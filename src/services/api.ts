@@ -1,6 +1,26 @@
-export const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+import axios from 'axios';
 
-export const simulateApiCall = async <T>(data: T, ms: number = 500): Promise<T> => {
-    await delay(ms);
-    return data;
-};
+const API_URL = 'http://localhost:5000/api';
+
+const api = axios.create({
+    baseURL: API_URL,
+    headers: {
+        'Content-Type': 'application/json',
+    },
+});
+
+// Add a request interceptor to include the JWT token
+api.interceptors.request.use(
+    (config) => {
+        const token = localStorage.getItem('token');
+        if (token) {
+            config.headers.Authorization = `Bearer ${token}`;
+        }
+        return config;
+    },
+    (error) => {
+        return Promise.reject(error);
+    }
+);
+
+export default api;

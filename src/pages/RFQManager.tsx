@@ -1,12 +1,32 @@
-import React, { useState } from 'react';
-import { useMockData } from '../contexts/MockContext';
+import React, { useState, useEffect } from 'react';
 import { Send, CheckCircle, FileText } from 'lucide-react';
+import { procurementService } from '../services/procurementService';
+import { PurchaseRequisition, Vendor } from '../types/models';
+import { useAppContext } from '../contexts/AppContext';
 
 const RFQManager: React.FC = () => {
-    const { prs, createRFQ, currentUser, updatePRStatus, vendors } = useMockData();
+    const { vendors } = useAppContext() as any;
+    const [prs, setPrs] = useState<PurchaseRequisition[]>([]);
     const [selectedPRs, setSelectedPRs] = useState<string[]>([]);
-    const [isVendorModalOpen, setIsVendorModalOpen] = useState(false);
     const [selectedVendorIds, setSelectedVendorIds] = useState<string[]>([]);
+    const [isVendorModalOpen, setIsVendorModalOpen] = useState(false);
+    const [isLoading, setIsLoading] = useState(true);
+
+    useEffect(() => {
+        fetchData();
+    }, []);
+
+    const fetchData = async () => {
+        try {
+            setIsLoading(true);
+            const fetchedPRs = await procurementService.getPRs();
+            setPrs(fetchedPRs.filter(pr => pr.status === 'Submitted'));
+        } catch (error) {
+            console.error('Error fetching PRs:', error);
+        } finally {
+            setIsLoading(false);
+        }
+    };
 
     // Filter for PRs that are "Submitted" or "Approved" but haven't been turned into RFQs
     const pendingPRs = prs.filter(pr => pr.status === 'Submitted' || pr.status === 'Approved');
@@ -16,31 +36,40 @@ const RFQManager: React.FC = () => {
         setIsVendorModalOpen(true);
     };
 
-    const handleCreateRFQ = () => {
+    const handleCreateRFQ = async () => {
         if (selectedVendorIds.length === 0) {
             alert('Please select at least one vendor');
             return;
         }
 
-        selectedPRs.forEach(prId => {
-            // Assign selected vendors and set due date +7 days
-            createRFQ(prId, new Date(Date.now() + 7 * 86400000).toISOString().split('T')[0], selectedVendorIds);
-        });
-
-        setSelectedPRs([]);
-        setSelectedVendorIds([]);
-        setIsVendorModalOpen(false);
-        // alert('RFQs Created Successfully!'); // Optional, maybe snackbar later
-        console.log('RFQs Created');
+        try {
+            setIsLoading(true);
+            for (const prId of selectedPRs) {
+                await procurementService.createRFQ({
+                    prId,
+                    dueDate: new Date(Date.now() + 7 * 86400000).toISOString(),
+                    vendorIds: selectedVendorIds
+                });
+            }
+            await fetchData();
+            setSelectedPRs([]);
+            setSelectedVendorIds([]);
+            setIsVendorModalOpen(false);
+        } catch (error) {
+            console.error('Error creating RFQ:', error);
+        } finally {
+            setIsLoading(false);
+        }
     };
 
-    const handleApprovePR = (prId: string) => {
-        updatePRStatus(prId, 'Approved');
+    const handleApprovePR = async (prId: string) => {
+        try {
+            await procurementService.updatePRStatus(prId, 'Approved');
+            await fetchData();
+        } catch (error) {
+            console.error('Error approving PR:', error);
+        }
     };
-
-    if (!currentUser || (currentUser.role !== 'Procurement' && currentUser.role !== 'Admin')) {
-        return <div className="p-4 text-vscode-text-muted">Access Denied. Procurement Role Required.</div>;
-    }
 
     return (
         <div className="flex flex-col h-full relative">
@@ -61,7 +90,12 @@ const RFQManager: React.FC = () => {
                 </button>
             </div>
 
-            <div className="flex-1 overflow-auto p-4">
+            <div className="flex-1 overflow-auto p-4 relative">
+                {isLoading && (
+                    <div className="absolute inset-0 bg-vscode-bg/50 backdrop-blur-sm z-50 flex items-center justify-center">
+                        <div className="text-vscode-text-muted">Loading...</div>
+                    </div>
+                )}
                 <h3 className="text-sm font-semibold mb-3">Pending Requisitions for RFQ</h3>
 
                 {pendingPRs.length === 0 ? (
@@ -108,9 +142,9 @@ const RFQManager: React.FC = () => {
                                                 </tr>
                                             </thead>
                                             <tbody>
-                                                {pr.items.map((item, i) => (
+                                                {pr.items.map((item: any, i: number) => (
                                                     <tr key={i}>
-                                                        <td>{item.itemId}</td>
+                                                        <td>{(item as any).item?.name || item.itemId}</td>
                                                         <td className="text-right">{item.quantity}</td>
                                                     </tr>
                                                 ))}
@@ -150,14 +184,15 @@ const RFQManager: React.FC = () => {
                         <div className="p-4 flex-1 overflow-auto">
                             <p className="text-sm text-vscode-text-muted mb-3">Select eligible vendors to receive this request for quotation.</p>
                             <div className="space-y-2">
-                                {vendors.map(vendor => (
+                                {vendors.map((vendor: Vendor) => (
                                     <label key={vendor.id} className="flex items-center gap-3 p-3 border border-vscode-border rounded hover:bg-vscode-list-hover cursor-pointer">
                                         <input
                                             type="checkbox"
                                             checked={selectedVendorIds.includes(vendor.id)}
                                             onChange={(e) => {
-                                                if (e.target.checked) setSelectedVendorIds([...selectedVendorIds, vendor.id]);
-                                                else setSelectedVendorIds(selectedVendorIds.filter(id => id !== vendor.id));
+                                                const id = vendor.id;
+                                                if (e.target.checked) setSelectedVendorIds([...selectedVendorIds, id]);
+                                                else setSelectedVendorIds(selectedVendorIds.filter(vId => vId !== id));
                                             }}
                                         />
                                         <div>

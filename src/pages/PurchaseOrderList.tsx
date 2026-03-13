@@ -1,10 +1,33 @@
-import React, { useState } from 'react';
-import { useMockData } from '../contexts/MockContext';
+import React, { useState, useEffect } from 'react';
 import { Download, Eye } from 'lucide-react';
+import { procurementService } from '../services/procurementService';
+import { masterService } from '../services/masterService';
+import { PurchaseOrder, Vendor } from '../types/models';
 
 const PurchaseOrderList: React.FC = () => {
-    const { pos, vendors } = useMockData();
-    const [selectedPO, setSelectedPO] = useState<string | null>(null);
+    const [pos, setPos] = useState<PurchaseOrder[]>([]);
+    const [vendors, setVendors] = useState<Vendor[]>([]);
+    const [isLoading, setIsLoading] = useState(true);
+
+    useEffect(() => {
+        fetchData();
+    }, []);
+
+    const fetchData = async () => {
+        try {
+            setIsLoading(true);
+            const [poData, vendorData] = await Promise.all([
+                procurementService.getPOs(),
+                masterService.getVendors()
+            ]);
+            setPos(poData);
+            setVendors(vendorData);
+        } catch (error) {
+            console.error('Error fetching POs:', error);
+        } finally {
+            setIsLoading(false);
+        }
+    };
 
     return (
         <div className="flex flex-col h-full">
@@ -24,7 +47,12 @@ const PurchaseOrderList: React.FC = () => {
                 </div>
             </div>
 
-            <div className="flex-1 overflow-auto">
+            <div className="flex-1 overflow-auto relative">
+                {isLoading && (
+                    <div className="absolute inset-0 bg-vscode-bg/50 backdrop-blur-sm z-50 flex items-center justify-center">
+                        <div className="text-vscode-text-muted">Loading...</div>
+                    </div>
+                )}
                 <table className="table-vscode">
                     <thead className="sticky top-0">
                         <tr>
@@ -37,8 +65,8 @@ const PurchaseOrderList: React.FC = () => {
                         </tr>
                     </thead>
                     <tbody>
-                        {pos.map(po => {
-                            const vendor = vendors.find(v => v.id === po.vendorId);
+                        {pos.map((po: any) => {
+                            const vendor = vendors.find((v: Vendor) => v.id === po.vendorId);
                             return (
                                 <tr key={po.id} className="hover:bg-vscode-hover">
                                     <td className="font-mono text-xs font-semibold">{po.poNo}</td>

@@ -1,22 +1,45 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Search, ShieldCheck } from 'lucide-react';
-import { useMockData } from '../contexts/MockContext';
+import { systemService } from '../services/systemService';
+import { ActivityLog } from '../types/models';
 
 const AuditLog = () => {
-    const { logs } = useMockData();
+    const [logs, setLogs] = useState<ActivityLog[]>([]);
+    const [isLoading, setIsLoading] = useState(true);
     const [filterModule, setFilterModule] = useState<string>('');
     const [searchTerm, setSearchTerm] = useState('');
 
+    useEffect(() => {
+        fetchLogs();
+    }, []);
+
+    const fetchLogs = async () => {
+        try {
+            setIsLoading(true);
+            const data = await systemService.getLogs();
+            setLogs(data);
+        } catch (error) {
+            console.error('Error fetching logs:', error);
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
     const filteredLogs = logs.filter(log => {
         const matchesModule = filterModule ? log.module === filterModule : true;
-        const matchesSearch = log.description.toLowerCase().includes(searchTerm.toLowerCase()) || 
-                              log.action.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                              log.userName.toLowerCase().includes(searchTerm.toLowerCase());
+        const matchesSearch = log.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
+            log.action.toLowerCase().includes(searchTerm.toLowerCase()) ||
+            log.userName.toLowerCase().includes(searchTerm.toLowerCase());
         return matchesModule && matchesSearch;
     }).sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
 
     return (
-        <div className="flex flex-col h-full">
+        <div className="flex flex-col h-full relative">
+            {isLoading && (
+                <div className="absolute inset-0 bg-vscode-bg/50 backdrop-blur-sm z-50 flex items-center justify-center">
+                    <div className="text-vscode-text-muted">Loading Security Logs...</div>
+                </div>
+            )}
             {/* Breadcrumb */}
             <div className="text-xs text-vscode-text-muted px-4 pt-3 pb-2 flex items-center gap-2">
                 <span>System</span>
@@ -25,7 +48,7 @@ const AuditLog = () => {
             </div>
 
             {/* Toolbar */}
-             <div className="px-4 pb-3 flex items-center gap-3 border-b border-vscode-border">
+            <div className="px-4 pb-3 flex items-center gap-3 border-b border-vscode-border">
                 <h2 className="font-semibold text-vscode-text flex items-center gap-2">
                     <ShieldCheck size={16} className="text-vscode-accent" />
                     Security Audit
@@ -53,7 +76,7 @@ const AuditLog = () => {
                     <option value="System">System</option>
                 </select>
             </div>
-            
+
             <div className="flex-1 overflow-auto">
                 <table className="table-vscode">
                     <thead className="sticky top-0 bg-vscode-bg">
@@ -75,9 +98,9 @@ const AuditLog = () => {
                                 <td>
                                     <span className={`badge 
                                         ${log.module === 'Auth' ? 'bg-purple-900 bg-opacity-30 text-purple-300' :
-                                          log.module === 'Procurement' ? 'bg-blue-900 bg-opacity-30 text-blue-300' :
-                                          log.module === 'Inventory' ? 'bg-orange-900 bg-opacity-30 text-orange-300' :
-                                          log.module === 'Finance' ? 'bg-green-900 bg-opacity-30 text-green-300' : 'bg-gray-700 bg-opacity-30 text-gray-300'}`}>
+                                            log.module === 'Procurement' ? 'bg-blue-900 bg-opacity-30 text-blue-300' :
+                                                log.module === 'Inventory' ? 'bg-orange-900 bg-opacity-30 text-orange-300' :
+                                                    log.module === 'Finance' ? 'bg-green-900 bg-opacity-30 text-green-300' : 'bg-gray-700 bg-opacity-30 text-gray-300'}`}>
                                         {log.module}
                                     </span>
                                 </td>
@@ -91,7 +114,7 @@ const AuditLog = () => {
                     </tbody>
                 </table>
             </div>
-             <div className="px-4 py-1.5 border-t border-vscode-border bg-vscode-sidebar text-xs text-vscode-text-muted">
+            <div className="px-4 py-1.5 border-t border-vscode-border bg-vscode-sidebar text-xs text-vscode-text-muted">
                 <span>{filteredLogs.length} events logged</span>
             </div>
         </div>

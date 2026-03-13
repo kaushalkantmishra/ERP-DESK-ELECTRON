@@ -1,15 +1,40 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Plus, Minus, Send, PackageMinus } from 'lucide-react';
-import { useMockData } from '../contexts/MockContext';
-import { MaterialRequest } from '../types/models';
+import { inventoryService } from '../services/inventoryService';
+import { masterService } from '../services/masterService';
+import { useAppContext } from '../contexts/AppContext';
+import { MaterialRequest, Item } from '../types/models';
 
-const MaterialIssue = () => {
-    const { currentUser, items, materialRequests, createMaterialRequest, createStockTransaction } = useMockData();
+const MaterialIssue: React.FC = () => {
+    const { currentUser } = useAppContext() as any;
+    const [items, setItems] = useState<Item[]>([]);
+    const [materialRequests, setMaterialRequests] = useState<MaterialRequest[]>([]);
+    const [isLoading, setIsLoading] = useState(true);
     const [isCreating, setIsCreating] = useState(false);
-    
+
     // New Request State
     const [reqItems, setReqItems] = useState<{ itemId: string; quantity: number }[]>([{ itemId: '', quantity: 1 }]);
     const [department, setDepartment] = useState(currentUser?.department || '');
+
+    useEffect(() => {
+        fetchData();
+    }, []);
+
+    const fetchData = async () => {
+        try {
+            setIsLoading(true);
+            const [itemData, reqData] = await Promise.all([
+                masterService.getItems(),
+                inventoryService.getMaterialRequests()
+            ]);
+            setItems(itemData);
+            setMaterialRequests(reqData);
+        } catch (error) {
+            console.error('Error fetching material data:', error);
+        } finally {
+            setIsLoading(false);
+        }
+    };
 
     const handleAddItem = () => {
         setReqItems([...reqItems, { itemId: '', quantity: 1 }]);
@@ -26,38 +51,58 @@ const MaterialIssue = () => {
         setReqItems(newItems);
     };
 
-    const handleSubmit = (e: React.FormEvent) => {
+    const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!currentUser) return;
 
-        createMaterialRequest({
-            requestorId: currentUser.id,
-            department,
-            date: new Date().toISOString().split('T')[0],
-            items: reqItems,
-            status: 'Requested'
-        });
-        setIsCreating(false);
-        setReqItems([{ itemId: '', quantity: 1 }]);
+        try {
+            await inventoryService.createMaterialRequest({
+                requestorId: currentUser.id,
+                department,
+                date: new Date().toISOString().split('T')[0],
+                items: reqItems,
+                status: 'Requested'
+            });
+            await fetchData();
+            setIsCreating(false);
+            setReqItems([{ itemId: '', quantity: 1 }]);
+        } catch (error) {
+            console.error('Error creating request:', error);
+        }
     };
 
-    const handleIssue = (request: MaterialRequest) => {
-       alert("Stock Issued. (Status update in UI pending backend wiring)");
-       
-       request.items.forEach(item => {
-           createStockTransaction({
-               itemId: item.itemId,
-               type: 'Issue',
-               quantity: item.quantity,
-               sourceWarehouseId: 'w1', // Defaulting for simple mock
-               referenceId: request.requestNo,
-               notes: 'Material Issue for ' + request.department
-           });
-       });
+    const handleIssue = async (request: MaterialRequest) => {
+        try {
+            setIsLoading(true);
+            // Issue stock for each item
+            for (const item of request.items) {
+                await inventoryService.createStockTransaction({
+                    itemId: item.itemId,
+                    type: 'Issue',
+                    quantity: item.quantity,
+                    sourceWarehouseId: 'w1', // Should ideally be selectable
+                    referenceId: request.requestNo,
+                    notes: 'Material Issue for ' + request.department
+                });
+            }
+            // Update request status (if API supports it)
+            // await inventoryService.updateMaterialRequestStatus(request.id, 'Issued');
+            await fetchData();
+            alert("Stock Issued Successfully");
+        } catch (error) {
+            console.error('Error issuing stock:', error);
+        } finally {
+            setIsLoading(false);
+        }
     };
 
     return (
-        <div className="flex flex-col h-full">
+        <div className="flex flex-col h-full relative">
+            {isLoading && (
+                <div className="absolute inset-0 bg-vscode-bg/50 backdrop-blur-sm z-50 flex items-center justify-center">
+                    <div className="text-vscode-text-muted">Proccessing Requests...</div>
+                </div>
+            )}
             {/* Breadcrumb */}
             <div className="text-xs text-vscode-text-muted px-4 pt-3 pb-2 flex items-center justify-between">
                 <div className="flex items-center gap-2">
@@ -69,11 +114,11 @@ const MaterialIssue = () => {
 
             {/* Toolbar */}
             <div className="px-4 pb-3 flex items-center gap-3 border-b border-vscode-border">
-               <h2 className="font-semibold text-vscode-text flex items-center gap-2">
+                <h2 className="font-semibold text-vscode-text flex items-center gap-2">
                     <PackageMinus size={16} className="text-vscode-accent" />
                     Material Requests
-               </h2>
-               <button
+                </h2>
+                <button
                     onClick={() => setIsCreating(!isCreating)}
                     className="btn-primary flex items-center gap-2 ml-auto"
                 >
@@ -86,7 +131,7 @@ const MaterialIssue = () => {
                 <div className="m-4 p-4 bg-vscode-sidebar rounded border border-vscode-border">
                     <h2 className="text-sm font-bold mb-3 text-vscode-text">Create Material Request</h2>
                     <form onSubmit={handleSubmit}>
-                         <div className="mb-4 form-group">
+                        <div className="mb-4 form-group">
                             <label className="form-label">Department</label>
                             <input
                                 type="text"
@@ -95,7 +140,7 @@ const MaterialIssue = () => {
                                 onChange={e => setDepartment(e.target.value)}
                             />
                         </div>
-                        
+
                         <div className="mb-4">
                             <label className="form-label mb-2">Items</label>
                             {reqItems.map((item, idx) => (
@@ -116,8 +161,8 @@ const MaterialIssue = () => {
                                         value={item.quantity}
                                         onChange={e => handleItemChange(idx, 'quantity', Number(e.target.value))}
                                     />
-                                    <button 
-                                        type="button" 
+                                    <button
+                                        type="button"
                                         onClick={() => handleRemoveItem(idx)}
                                         className="p-1 hover:bg-vscode-hover rounded text-vscode-text-muted hover:text-red-400"
                                     >
@@ -130,7 +175,7 @@ const MaterialIssue = () => {
                             </button>
                         </div>
 
-                         <button
+                        <button
                             type="submit"
                             className="btn-primary flex items-center gap-2"
                         >
@@ -185,7 +230,7 @@ const MaterialIssue = () => {
                     </tbody>
                 </table>
             </div>
-             <div className="px-4 py-1.5 border-t border-vscode-border bg-vscode-sidebar text-xs text-vscode-text-muted">
+            <div className="px-4 py-1.5 border-t border-vscode-border bg-vscode-sidebar text-xs text-vscode-text-muted">
                 <span>{materialRequests.length} requests</span>
             </div>
         </div>

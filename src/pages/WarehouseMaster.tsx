@@ -1,10 +1,11 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Plus, Search, Warehouse as WarehouseIcon } from 'lucide-react';
-import { useMockData } from '../contexts/MockContext';
+import { masterService } from '../services/masterService';
 import { Warehouse } from '../types/models';
 
 const WarehouseMaster = () => {
-    const { warehouses, addWarehouse } = useMockData();
+    const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
+    const [isLoading, setIsLoading] = useState(true);
     const [isAdding, setIsAdding] = useState(false);
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [searchTerm, setSearchTerm] = useState('');
@@ -12,17 +13,39 @@ const WarehouseMaster = () => {
         code: '', name: '', location: '', managerId: ''
     });
 
+    useEffect(() => {
+        fetchWarehouses();
+    }, []);
+
+    const fetchWarehouses = async () => {
+        try {
+            setIsLoading(true);
+            const data = await masterService.getWarehouses();
+            setWarehouses(data);
+        } catch (error) {
+            console.error('Error fetching warehouses:', error);
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         setIsSubmitting(true);
-        await addWarehouse(newWarehouse);
-        setIsSubmitting(false);
-        setIsAdding(false);
-        setNewWarehouse({ code: '', name: '', location: '', managerId: '' });
+        try {
+            await masterService.addWarehouse(newWarehouse);
+            await fetchWarehouses();
+            setIsAdding(false);
+            setNewWarehouse({ code: '', name: '', location: '', managerId: '' });
+        } catch (error) {
+            console.error('Error adding warehouse:', error);
+        } finally {
+            setIsSubmitting(false);
+        }
     };
 
-    const filteredWarehouses = warehouses.filter(wh => 
-        wh.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
+    const filteredWarehouses = warehouses.filter(wh =>
+        wh.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
         wh.location.toLowerCase().includes(searchTerm.toLowerCase()) ||
         wh.code?.toLowerCase().includes(searchTerm.toLowerCase())
     );
@@ -48,7 +71,7 @@ const WarehouseMaster = () => {
                         onChange={(e) => setSearchTerm(e.target.value)}
                     />
                 </div>
-                
+
                 <button
                     onClick={() => setIsAdding(!isAdding)}
                     className="btn-primary flex items-center gap-2 ml-auto"
@@ -102,7 +125,7 @@ const WarehouseMaster = () => {
                                 onChange={e => setNewWarehouse({ ...newWarehouse, managerId: e.target.value })}
                             />
                         </div>
-                        
+
                         <div className="col-span-2 flex justify-end gap-2">
                             <button type="button" onClick={() => setIsAdding(false)} className="btn-secondary py-1 px-3">Cancel</button>
                             <button type="submit" disabled={isSubmitting} className="btn-primary py-1 px-3">
@@ -124,7 +147,9 @@ const WarehouseMaster = () => {
                         </tr>
                     </thead>
                     <tbody>
-                        {filteredWarehouses.map(wh => (
+                        {isLoading ? (
+                            <tr><td colSpan={4} className="p-4 text-center text-vscode-text-muted">Loading warehouses...</td></tr>
+                        ) : filteredWarehouses.map(wh => (
                             <tr key={wh.id} className="hover:bg-vscode-list-hover group">
                                 <td className="font-mono text-xs font-semibold text-vscode-accent">{wh.code || '-'}</td>
                                 <td className="font-semibold flex items-center gap-2">
@@ -135,7 +160,7 @@ const WarehouseMaster = () => {
                                 <td>{wh.managerId || '-'}</td>
                             </tr>
                         ))}
-                         {filteredWarehouses.length === 0 && (
+                        {!isLoading && filteredWarehouses.length === 0 && (
                             <tr><td colSpan={4} className="p-4 text-center text-vscode-text-muted">No warehouses found</td></tr>
                         )}
                     </tbody>

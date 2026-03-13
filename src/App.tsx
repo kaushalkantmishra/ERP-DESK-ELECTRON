@@ -7,7 +7,7 @@ import {
 } from "react-router-dom";
 import { ProtectedRoute } from "./components/auth/ProtectedRoute";
 import Login from "./pages/Login";
-import { MockProvider } from "./contexts/MockContext";
+import { AppProvider } from "./contexts/AppContext";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import TitleBar from "./components/layout/TitleBar";
 import Sidebar from "./components/layout/Sidebar";
@@ -74,7 +74,7 @@ function App() {
   };
 
   return (
-    <MockProvider>
+    <AppProvider>
       <ThemeProvider>
         <Router>
           <Routes>
@@ -225,7 +225,7 @@ function App() {
           </Routes>
         </Router>
       </ThemeProvider>
-    </MockProvider>
+    </AppProvider>
   );
 }
 

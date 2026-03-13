@@ -1,10 +1,11 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Search, Plus, Scale } from 'lucide-react';
-import { useMockData } from '../contexts/MockContext';
+import { masterService } from '../services/masterService';
 import { Uom } from '../types/models';
 
 const UomMaster = () => {
-    const { uoms, addUom } = useMockData();
+    const [uoms, setUoms] = useState<Uom[]>([]);
+    const [isLoading, setIsLoading] = useState(true);
     const [isAdding, setIsAdding] = useState(false);
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [searchTerm, setSearchTerm] = useState('');
@@ -13,17 +14,39 @@ const UomMaster = () => {
         code: '', name: ''
     });
 
+    useEffect(() => {
+        fetchUoms();
+    }, []);
+
+    const fetchUoms = async () => {
+        try {
+            setIsLoading(true);
+            const data = await masterService.getUoms();
+            setUoms(data);
+        } catch (error) {
+            console.error('Error fetching UOMs:', error);
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         setIsSubmitting(true);
-        await addUom(newUom);
-        setIsSubmitting(false);
-        setIsAdding(false);
-        setNewUom({ code: '', name: '' });
+        try {
+            await masterService.addUom(newUom);
+            await fetchUoms();
+            setIsAdding(false);
+            setNewUom({ code: '', name: '' });
+        } catch (error) {
+            console.error('Error adding UOM:', error);
+        } finally {
+            setIsSubmitting(false);
+        }
     };
 
-    const filteredUoms = uoms.filter(u => 
-        u.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
+    const filteredUoms = uoms.filter(u =>
+        u.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
         u.code.toLowerCase().includes(searchTerm.toLowerCase())
     );
 
@@ -87,7 +110,7 @@ const UomMaster = () => {
                                 placeholder="e.g. Pieces"
                             />
                         </div>
-                        
+
                         <div className="col-span-2 flex justify-end gap-2 pt-2">
                             <button type="button" onClick={() => setIsAdding(false)} className="btn-secondary py-1 px-3">Cancel</button>
                             <button type="submit" disabled={isSubmitting} className="btn-primary py-1 px-3">
@@ -108,20 +131,22 @@ const UomMaster = () => {
                         </tr>
                     </thead>
                     <tbody>
-                        {filteredUoms.map(uom => (
-                            <tr key={uom.id} className="hover:bg-vscode-list-hover">
-                                <td className="font-mono text-xs font-semibold text-vscode-accent">{uom.code}</td>
-                                <td>{uom.name}</td>
-                                <td className="font-mono text-xs text-vscode-text-muted">{uom.id}</td>
+                        {isLoading ? (
+                            <tr><td colSpan={3} className="p-4 text-center text-vscode-text-muted">Loading UOMs...</td></tr>
+                        ) : filteredUoms.map(u => (
+                            <tr key={u.id} className="hover:bg-vscode-list-hover group">
+                                <td className="font-mono text-xs font-semibold text-vscode-accent">{u.code}</td>
+                                <td>{u.name}</td>
+                                <td className="font-mono text-xs text-vscode-text-muted">{u.id}</td>
                             </tr>
                         ))}
-                        {filteredUoms.length === 0 && (
-                             <tr><td colSpan={3} className="p-4 text-center text-vscode-text-muted">No units found</td></tr>
+                        {!isLoading && filteredUoms.length === 0 && (
+                            <tr><td colSpan={3} className="p-4 text-center text-vscode-text-muted">No UOMs found</td></tr>
                         )}
                     </tbody>
                 </table>
             </div>
-             <div className="px-4 py-1.5 border-t border-vscode-border bg-vscode-sidebar text-xs text-vscode-text-muted">
+            <div className="px-4 py-1.5 border-t border-vscode-border bg-vscode-sidebar text-xs text-vscode-text-muted">
                 <span>{filteredUoms.length} units</span>
             </div>
         </div>

@@ -1,11 +1,17 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Plus, Receipt } from 'lucide-react';
-import { useMockData } from '../contexts/MockContext';
+import { procurementService } from '../services/procurementService';
+import { financeService } from '../services/financeService';
+import { masterService } from '../services/masterService';
+import { Invoice, Vendor, PurchaseOrder } from '../types/models';
 
 const VendorInvoice = () => {
-    const { vendors, pos, invoices, createInvoice, updateInvoiceStatus } = useMockData();
+    const [vendors, setVendors] = useState<Vendor[]>([]);
+    const [pos, setPos] = useState<PurchaseOrder[]>([]);
+    const [invoices, setInvoices] = useState<Invoice[]>([]);
+    const [isLoading, setIsLoading] = useState(true);
     const [isCreating, setIsCreating] = useState(false);
-    
+
     // Create Form State
     const [vendorId, setVendorId] = useState('');
     const [poId, setPoId] = useState('');
@@ -13,17 +19,39 @@ const VendorInvoice = () => {
     const [amount, setAmount] = useState(0);
     const [dueDate, setDueDate] = useState('');
 
-    const openPOs = pos.filter(p => !['Closed'].includes(p.status)); // Simplified logic
+    useEffect(() => {
+        fetchData();
+    }, []);
+
+    const fetchData = async () => {
+        try {
+            setIsLoading(true);
+            const [vendorData, poData, invData] = await Promise.all([
+                masterService.getVendors(),
+                procurementService.getPOs(),
+                financeService.getInvoices()
+            ]);
+            setVendors(vendorData);
+            setPos(poData);
+            setInvoices(invData);
+        } catch (error) {
+            console.error('Error fetching data:', error);
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    const openPOs = pos.filter(p => !['Closed', 'Completed'].includes(p.status as string));
 
     const handleVendorChange = (id: string) => {
         setVendorId(id);
         const firstPO = openPOs.find(p => p.vendorId === id);
         if (firstPO) {
-             setPoId(firstPO.id);
-             setAmount(firstPO.totalAmount);
+            setPoId(firstPO.id);
+            setAmount(firstPO.totalAmount);
         } else {
-             setPoId('');
-             setAmount(0);
+            setPoId('');
+            setAmount(0);
         }
     };
 
@@ -33,11 +61,39 @@ const VendorInvoice = () => {
         if (po) setAmount(po.totalAmount);
     };
 
-    const handleSubmit = (e: React.FormEvent) => {
+    const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
-        createInvoice(poId, vendorId, amount, dueDate, invoiceNo);
-        setIsCreating(false);
-        setVendorId(''); setPoId(''); setInvoiceNo(''); setAmount(0); setDueDate('');
+        try {
+            setIsLoading(true);
+            await financeService.createInvoice({
+                poId,
+                vendorId,
+                invoiceNo,
+                amount,
+                dueDate: new Date(dueDate).toISOString(),
+                date: new Date().toISOString(),
+                status: 'Received'
+            });
+            await fetchData();
+            setIsCreating(false);
+            setVendorId(''); setPoId(''); setInvoiceNo(''); setAmount(0); setDueDate('');
+        } catch (error) {
+            console.error('Error saving invoice:', error);
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    const handleUpdateStatus = async (id: string, status: Invoice['status']) => {
+        try {
+            setIsLoading(true);
+            await financeService.updateInvoiceStatus(id, status);
+            await fetchData();
+        } catch (error) {
+            console.error('Error updating status:', error);
+        } finally {
+            setIsLoading(false);
+        }
     };
 
     return (
@@ -50,7 +106,7 @@ const VendorInvoice = () => {
             </div>
 
             {/* Toolbar */}
-             <div className="px-4 pb-3 flex items-center gap-3 border-b border-vscode-border">
+            <div className="px-4 pb-3 flex items-center gap-3 border-b border-vscode-border">
                 <h2 className="font-semibold text-vscode-text flex items-center gap-2">
                     <Receipt size={16} className="text-vscode-accent" />
                     Invoices
@@ -95,7 +151,7 @@ const VendorInvoice = () => {
                                 ))}
                             </select>
                         </div>
-                        
+
                         <div className="form-group">
                             <label className="form-label">Invoice No</label>
                             <input
@@ -116,7 +172,7 @@ const VendorInvoice = () => {
                                 onChange={e => setDueDate(e.target.value)}
                             />
                         </div>
-                        
+
                         <div className="form-group">
                             <label className="form-label">Amount</label>
                             <input
@@ -140,7 +196,12 @@ const VendorInvoice = () => {
                 </div>
             )}
 
-            <div className="flex-1 overflow-auto">
+            <div className="flex-1 overflow-auto relative">
+                {isLoading && (
+                    <div className="absolute inset-0 bg-vscode-bg/50 backdrop-blur-sm z-50 flex items-center justify-center">
+                        <div className="text-vscode-text-muted">Loading...</div>
+                    </div>
+                )}
                 <table className="table-vscode">
                     <thead className="sticky top-0 bg-vscode-bg">
                         <tr>
@@ -154,9 +215,9 @@ const VendorInvoice = () => {
                         </tr>
                     </thead>
                     <tbody>
-                        {invoices.map(inv => {
-                            const vendor = vendors.find(v => v.id === inv.vendorId);
-                            const po = pos.find(p => p.id === inv.poId);
+                        {invoices.map((inv: any) => {
+                            const vendor = vendors.find((v: Vendor) => v.id === inv.vendorId);
+                            const po = pos.find((p: PurchaseOrder) => p.id === inv.poId);
                             return (
                                 <tr key={inv.id} className="hover:bg-vscode-list-hover">
                                     <td className="font-mono text-xs font-semibold">{inv.invoiceNo}</td>
@@ -166,24 +227,24 @@ const VendorInvoice = () => {
                                     <td className="font-mono font-bold">${inv.amount.toLocaleString()}</td>
                                     <td>
                                         <span className={`badge 
-                                            ${inv.status === 'Paid' ? 'badge-success' : 
-                                              inv.status === 'Verified' ? 'badge-info' :
-                                              inv.status === 'Received' ? 'badge-warning' : 'badge-error'}`}>
+                                            ${inv.status === 'Paid' ? 'badge-success' :
+                                                inv.status === 'Verified' ? 'badge-info' :
+                                                    inv.status === 'Received' ? 'badge-warning' : 'badge-error'}`}>
                                             {inv.status}
                                         </span>
                                     </td>
                                     <td>
                                         {inv.status === 'Received' && (
-                                            <button 
-                                                onClick={() => updateInvoiceStatus(inv.id, 'Verified')}
+                                            <button
+                                                onClick={() => handleUpdateStatus(inv.id, 'Verified')}
                                                 className="text-vscode-accent hover:underline text-xs mr-2"
                                             >
                                                 Verify
                                             </button>
                                         )}
                                         {inv.status === 'Verified' && (
-                                            <button 
-                                                onClick={() => updateInvoiceStatus(inv.id, 'Paid')}
+                                            <button
+                                                onClick={() => handleUpdateStatus(inv.id, 'Paid')}
                                                 className="text-status-success hover:underline text-xs"
                                             >
                                                 Pay
@@ -194,12 +255,12 @@ const VendorInvoice = () => {
                             );
                         })}
                         {invoices.length === 0 && (
-                             <tr><td colSpan={7} className="p-4 text-center text-vscode-text-muted">No Invoices found</td></tr>
+                            <tr><td colSpan={7} className="p-4 text-center text-vscode-text-muted">No Invoices found</td></tr>
                         )}
                     </tbody>
                 </table>
             </div>
-             <div className="px-4 py-1.5 border-t border-vscode-border bg-vscode-sidebar text-xs text-vscode-text-muted">
+            <div className="px-4 py-1.5 border-t border-vscode-border bg-vscode-sidebar text-xs text-vscode-text-muted">
                 <span>{invoices.length} invoices</span>
             </div>
         </div>

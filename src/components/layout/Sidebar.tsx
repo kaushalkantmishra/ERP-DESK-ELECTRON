@@ -24,7 +24,7 @@ import {
     ShieldCheck
 } from 'lucide-react';
 import { Tab } from '../../App';
-import { useMockData } from '../../contexts/MockContext';
+import { useAppContext } from '../../contexts/AppContext';
 import { Role } from '../../types/models';
 
 interface SidebarProps {
@@ -44,7 +44,7 @@ interface MenuItem {
 
 const Sidebar: React.FC<SidebarProps> = ({ collapsed, onToggle, onNavigate }) => {
     const navigate = useNavigate();
-    const { logout, currentUser } = useMockData();
+    const { logout, currentUser } = useAppContext();
     const [expandedGroups, setExpandedGroups] = useState<string[]>(['procurement', 'inventory']);
     const [activeItem, setActiveItem] = useState('dashboard');
 
@@ -163,7 +163,7 @@ const Sidebar: React.FC<SidebarProps> = ({ collapsed, onToggle, onNavigate }) =>
     // Filter items based on role
     const filterItems = (items: MenuItem[]): MenuItem[] => {
         if (!currentUser) return [];
-        
+
         return items.filter(item => {
             // Check if user has required role
             if (item.allowedRoles && !item.allowedRoles.includes(currentUser.role)) {

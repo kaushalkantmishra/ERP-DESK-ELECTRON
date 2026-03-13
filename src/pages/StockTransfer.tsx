@@ -1,9 +1,14 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { ArrowLeftRight, CheckCircle, AlertOctagon } from 'lucide-react';
-import { useMockData } from '../contexts/MockContext';
+import { inventoryService } from '../services/inventoryService';
+import { masterService } from '../services/masterService';
+import { Item, Warehouse, StockLevel } from '../types/models';
 
 const StockTransfer = () => {
-    const { items, warehouses, stockLevels, createStockTransaction } = useMockData();
+    const [items, setItems] = useState<Item[]>([]);
+    const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
+    const [stockLevels, setStockLevels] = useState<StockLevel[]>([]);
+    const [isLoading, setIsLoading] = useState(true);
     const [sourceWh, setSourceWh] = useState('');
     const [targetWh, setTargetWh] = useState('');
     const [item, setItem] = useState('');
@@ -11,7 +16,29 @@ const StockTransfer = () => {
     const [notes, setNotes] = useState('');
     const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
 
-    const handleSubmit = (e: React.FormEvent) => {
+    useEffect(() => {
+        fetchData();
+    }, []);
+
+    const fetchData = async () => {
+        try {
+            setIsLoading(true);
+            const [itemData, whData, stockData] = await Promise.all([
+                masterService.getItems(),
+                masterService.getWarehouses(),
+                inventoryService.getStockLevels()
+            ]);
+            setItems(itemData);
+            setWarehouses(whData);
+            setStockLevels(stockData);
+        } catch (error) {
+            console.error('Error fetching transfer data:', error);
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         setMessage(null);
 
@@ -27,25 +54,39 @@ const StockTransfer = () => {
             return;
         }
 
-        createStockTransaction({
-            itemId: item,
-            type: 'Transfer',
-            quantity: qty,
-            sourceWarehouseId: sourceWh,
-            targetWarehouseId: targetWh,
-            notes
-        });
+        try {
+            setIsLoading(true);
+            await inventoryService.createStockTransaction({
+                itemId: item,
+                type: 'Transfer',
+                quantity: qty,
+                sourceWarehouseId: sourceWh,
+                targetWarehouseId: targetWh,
+                notes
+            });
 
-        setMessage({ type: 'success', text: 'Stock transfer successful.' });
-        setQty(0);
-        setNotes('');
+            await fetchData();
+            setMessage({ type: 'success', text: 'Stock transfer successful.' });
+            setQty(0);
+            setNotes('');
+        } catch (error) {
+            console.error('Error executing transfer:', error);
+            setMessage({ type: 'error', text: 'Failed to execute transfer.' });
+        } finally {
+            setIsLoading(false);
+        }
     };
 
     return (
-        <div className="flex flex-col h-full p-6">
-             {/* Breadcrumb - absolute to top left of area or just general header */}
+        <div className="flex flex-col h-full p-6 relative">
+            {isLoading && (
+                <div className="absolute inset-0 bg-vscode-bg/50 backdrop-blur-sm z-50 flex items-center justify-center">
+                    <div className="text-vscode-text-muted">Transferring Stock...</div>
+                </div>
+            )}
+            {/* Breadcrumb - absolute to top left of area or just general header */}
             <div className="w-full mb-8">
-                 <div className="text-xs text-vscode-text-muted mb-2 flex items-center gap-2">
+                <div className="text-xs text-vscode-text-muted mb-2 flex items-center gap-2">
                     <span>Inventory</span>
                     <span>/</span>
                     <span className="text-vscode-text">Stock Transfer</span>

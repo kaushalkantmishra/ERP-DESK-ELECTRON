@@ -2,7 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Plus, Filter, Download } from 'lucide-react';
 
-import { useMockData } from '../contexts/MockContext';
+import { procurementService } from '../services/procurementService';
+import { PurchaseRequisition } from '../types/models';
 
 interface PurchaseRequisitionListProps {
     onNewPR: () => void;
@@ -10,8 +11,24 @@ interface PurchaseRequisitionListProps {
 
 const PurchaseRequisitionList: React.FC<PurchaseRequisitionListProps> = ({ onNewPR }) => {
     const navigate = useNavigate();
-    const { prs } = useMockData();
-    const purchaseRequisitions = prs; // Use data from context
+    const [purchaseRequisitions, setPurchaseRequisitions] = useState<PurchaseRequisition[]>([]);
+    const [isLoading, setIsLoading] = useState(true);
+
+    useEffect(() => {
+        fetchPRs();
+    }, []);
+
+    const fetchPRs = async () => {
+        try {
+            setIsLoading(true);
+            const data = await procurementService.getPRs();
+            setPurchaseRequisitions(data);
+        } catch (error) {
+            console.error('Error fetching PRs:', error);
+        } finally {
+            setIsLoading(false);
+        }
+    };
 
     const [selectedRow, setSelectedRow] = useState<number | null>(null);
     const [filterDepartment, setFilterDepartment] = useState('');
@@ -140,16 +157,18 @@ const PurchaseRequisitionList: React.FC<PurchaseRequisitionListProps> = ({ onNew
                         </tr>
                     </thead>
                     <tbody>
-                        {purchaseRequisitions.map((pr, index) => (
+                        {isLoading ? (
+                            <tr><td colSpan={6} className="p-4 text-center text-vscode-text-muted">Loading requisitions...</td></tr>
+                        ) : purchaseRequisitions.map((pr, index) => (
                             <tr
-                                key={pr.prNo}
+                                key={pr.id}
                                 className={selectedRow === index ? 'active' : ''}
-                                onClick={() => navigate(`/procurement/purchase-requisition/${pr.prNo}`)}
+                                onClick={() => navigate(`/procurement/purchase-requisition/${pr.id}`)}
                             >
                                 <td className="font-mono text-xs font-semibold">{pr.prNo}</td>
-                                <td className="font-mono text-xs">{pr.date}</td>
+                                <td className="font-mono text-xs">{new Date(pr.date).toLocaleDateString()}</td>
                                 <td>{pr.department}</td>
-                                <td>{pr.requestorId}</td> {/** Ideally map ID to Name */}
+                                <td>{(pr as any).requestor?.name || pr.requestorId}</td>
                                 <td>
                                     <span className={`font-semibold ${getPriorityColor(pr.priority)}`}>
                                         {pr.priority}
@@ -162,6 +181,9 @@ const PurchaseRequisitionList: React.FC<PurchaseRequisitionListProps> = ({ onNew
                                 </td>
                             </tr>
                         ))}
+                        {!isLoading && purchaseRequisitions.length === 0 && (
+                            <tr><td colSpan={6} className="p-4 text-center text-vscode-text-muted">No requisitions found.</td></tr>
+                        )}
                     </tbody>
                 </table>
             </div>

@@ -1,38 +1,78 @@
-import React, { useState } from 'react';
-import { useMockData } from '../contexts/MockContext';
+import React, { useState, useEffect } from 'react';
 import { Package, Check, AlertTriangle } from 'lucide-react';
+import { procurementService } from '../services/procurementService';
+import { inventoryService } from '../services/inventoryService';
 import { PurchaseOrder } from '../types/models';
+import { useAppContext } from '../contexts/AppContext';
 
 const GoodsReceipt: React.FC = () => {
-    const { pos, grns, createGRN, currentUser } = useMockData(); // consume createGRN - need to implement
+    const { currentUser, warehouses, items: masterItems } = useAppContext() as any;
+    const [pos, setPos] = useState<PurchaseOrder[]>([]);
     const [selectedPOId, setSelectedPOId] = useState<string | null>(null);
-    const [receivedItems, setReceivedItems] = useState<{ itemId: string, qty: number, accepted: number, rejected: number }[]>([]);
+    const [selectedWarehouseId, setSelectedWarehouseId] = useState<string>('');
+    const [receivedItems, setReceivedItems] = useState<{ itemId: string, quantity: number, accepted: number, rejected: number }[]>([]);
+    const [isLoading, setIsLoading] = useState(true);
 
-    // Filter POs that are "Sent" or "Partially Received"
-    const openPOs = pos.filter(po => po.status === 'Sent' || po.status === 'Partially Received');
+    useEffect(() => {
+        fetchPOs();
+        if (warehouses.length > 0) {
+            setSelectedWarehouseId(warehouses[0].id);
+        }
+    }, [warehouses]);
+
+    const fetchPOs = async () => {
+        try {
+            setIsLoading(true);
+            const fetchedPOs = await procurementService.getPOs();
+            // Filter POs that are "Sent" or "Partially Received" or "Open"
+            setPos(fetchedPOs.filter(po => (po.status as any) === 'Sent' || (po.status as any) === 'Partially Received' || (po.status as any) === 'Open'));
+        } catch (error) {
+            console.error('Error fetching POs:', error);
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    // Filter POs that are "Sent" or "Partially Received" or "Open"
+    const openPOs = pos.filter(po => (po.status as any) === 'Sent' || (po.status as any) === 'Partially Received' || (po.status as any) === 'Open');
     const selectedPO = pos.find(p => p.id === selectedPOId);
 
     const handleSelectPO = (po: PurchaseOrder) => {
         setSelectedPOId(po.id);
         // Initialize receive buffer
-        setReceivedItems(po.items.map(i => ({
+        setReceivedItems(po.items.map((i: any) => ({
             itemId: i.itemId,
-            qty: i.qty, // Expected
-            accepted: i.qty, // Default all accepted
+            quantity: i.quantity || i.qty, // Expected
+            accepted: i.quantity || i.qty, // Default all accepted
             rejected: 0
         })));
     };
 
-    const handleReceive = () => {
-        if (!selectedPOId) return;
-        // Logic to update MockContext would go here -> createGRN(selectedPOId, receivedItems)
-        alert(`Goods Received for PO ${selectedPO?.poNo}. Inventory Updated.`);
-        setSelectedPOId(null);
+    const handleReceive = async () => {
+        if (!selectedPOId || !selectedWarehouseId) return;
+        try {
+            setIsLoading(true);
+            await inventoryService.createGRN({
+                poId: selectedPOId,
+                warehouseId: selectedWarehouseId,
+                receivedDate: new Date().toISOString(),
+                receivedBy: currentUser?.id || 'admin',
+                items: receivedItems.map(ri => ({
+                    itemId: ri.itemId,
+                    receivedQty: ri.accepted + ri.rejected,
+                    acceptedQty: ri.accepted,
+                    rejectedQty: ri.rejected
+                }))
+            });
+            await fetchPOs();
+            alert(`Goods Received for PO ${selectedPO?.poNo}. Inventory Updated.`);
+            setSelectedPOId(null);
+        } catch (error) {
+            console.error('Error creating GRN:', error);
+        } finally {
+            setIsLoading(false);
+        }
     };
-
-    if (currentUser.role !== 'Store' && currentUser.role !== 'Admin') {
-        return <div className="p-4 text-vscode-text-muted">Access Denied. Store/Inventory Role Required.</div>;
-    }
 
     return (
         <div className="flex flex-col h-full">
@@ -68,11 +108,28 @@ const GoodsReceipt: React.FC = () => {
                 </div>
 
                 {/* GRN Entry */}
-                <div className="flex-1 overflow-auto p-4">
+                <div className="flex-1 overflow-auto p-4 relative">
+                    {isLoading && (
+                        <div className="absolute inset-0 bg-vscode-bg/50 backdrop-blur-sm z-50 flex items-center justify-center">
+                            <div className="text-vscode-text-muted">Loading...</div>
+                        </div>
+                    )}
                     {selectedPO ? (
                         <div>
                             <div className="flex items-center justify-between mb-4">
                                 <h2 className="text-lg font-semibold">Receive Goods - {selectedPO.poNo}</h2>
+                                <div className="flex items-center gap-3">
+                                    <label className="text-xs text-vscode-text-muted">Warehouse:</label>
+                                    <select
+                                        className="input-vscode py-1 text-xs"
+                                        value={selectedWarehouseId}
+                                        onChange={(e) => setSelectedWarehouseId(e.target.value)}
+                                    >
+                                        {warehouses.map((wh: any) => (
+                                            <option key={wh.id} value={wh.id}>{wh.name}</option>
+                                        ))}
+                                    </select>
+                                </div>
                             </div>
 
                             <div className="bg-vscode-sidebar border border-vscode-border p-4 mb-4">
@@ -87,10 +144,10 @@ const GoodsReceipt: React.FC = () => {
                                         </tr>
                                     </thead>
                                     <tbody>
-                                        {receivedItems.map((item, idx) => (
+                                        {receivedItems.map((item: any, idx) => (
                                             <tr key={item.itemId}>
-                                                <td>{item.itemId}</td>
-                                                <td>{item.qty}</td>
+                                                <td>{masterItems.find((m: any) => m.id === item.itemId)?.name || item.itemId}</td>
+                                                <td>{item.quantity}</td>
                                                 <td>
                                                     <input
                                                         type="number"

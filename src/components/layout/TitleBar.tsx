@@ -1,10 +1,10 @@
 import React, { useState } from 'react';
 import { Search, Command, User, Building2 } from 'lucide-react';
-import { useMockData } from '../../contexts/MockContext';
+import { useAppContext } from '../../contexts/AppContext';
 
 const TitleBar: React.FC = () => {
     const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
-    const { currentUser, switchRole } = useMockData();
+    const { currentUser } = useAppContext();
 
     const handleKeyDown = (e: React.KeyboardEvent) => {
         if (e.ctrlKey && e.shiftKey && e.key === 'P') {
@@ -53,28 +53,10 @@ const TitleBar: React.FC = () => {
                 </div>
 
                 {/* Role Switcher */}
-                <div className="group relative">
-                    <button className="flex items-center gap-2 text-xs cursor-pointer hover:bg-vscode-hover px-2 py-1 transition-colors border border-transparent hover:border-vscode-border">
-                        <User size={14} className="text-vscode-text-muted" />
-                        <span className="font-semibold">{currentUser.name}</span>
-                        <span className="text-vscode-text-muted">({currentUser.role})</span>
-                    </button>
-
-                    <div className="absolute right-0 top-full mt-1 w-48 bg-vscode-sidebar border border-vscode-border shadow-xl z-50 hidden group-hover:block">
-                        <div className="py-1">
-                            <div className="px-3 py-1.5 text-xs font-semibold text-vscode-text-muted border-b border-vscode-border">Switch Role</div>
-                            {['Admin', 'Procurement', 'Store', 'Dept', 'Finance', 'Vendor'].map((role) => (
-                                <button
-                                    key={role}
-                                    className={`w-full text-left px-3 py-2 text-xs hover:bg-vscode-hover flex items-center gap-2 ${currentUser.role === role ? 'text-vscode-accent' : ''}`}
-                                    onClick={() => switchRole(role as any)}
-                                >
-                                    <div className={`w-2 h-2 rounded-full ${currentUser.role === role ? 'bg-vscode-accent' : 'bg-transparent'}`} />
-                                    {role}
-                                </button>
-                            ))}
-                        </div>
-                    </div>
+                <div className="flex items-center gap-2 text-xs cursor-pointer hover:bg-vscode-hover px-2 py-1 transition-colors border border-transparent hover:border-vscode-border">
+                    <User size={14} className="text-vscode-text-muted" />
+                    <span className="font-semibold">{currentUser?.name}</span>
+                    <span className="text-vscode-text-muted">({currentUser?.role})</span>
                 </div>
             </div>
 

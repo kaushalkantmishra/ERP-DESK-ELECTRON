@@ -1,30 +1,70 @@
-import React, { useState } from 'react';
-import { useMockData } from '../contexts/MockContext';
+import React, { useState, useEffect } from 'react';
 import { Check, FileText } from 'lucide-react';
+import { procurementService } from '../services/procurementService';
+import { masterService } from '../services/masterService';
+import { RFQ, Vendor, Quotation, Item } from '../types/models';
 
 const Quotations: React.FC = () => {
-    const { rfqs, vendors, quotes, createPO, submitQuote, items: masterItems } = useMockData();
+    const [rfqs, setRfqs] = useState<RFQ[]>([]);
+    const [vendors, setVendors] = useState<Vendor[]>([]);
+    const [quotes, setQuotes] = useState<Quotation[]>([]);
+    const [masterItems, setMasterItems] = useState<Item[]>([]);
+    const [isLoading, setIsLoading] = useState(true);
     const [selectedRFQId, setSelectedRFQId] = useState<string | null>(null);
+
+    useEffect(() => {
+        fetchData();
+    }, []);
+
+    const fetchData = async () => {
+        try {
+            setIsLoading(true);
+            const [rfqData, vendorData, quoteData, itemData] = await Promise.all([
+                procurementService.getRFQs(),
+                masterService.getVendors(),
+                procurementService.getQuotes(),
+                masterService.getItems()
+            ]);
+            setRfqs(rfqData);
+            setVendors(vendorData);
+            setQuotes(quoteData);
+            setMasterItems(itemData);
+        } catch (error) {
+            console.error('Error fetching data:', error);
+        } finally {
+            setIsLoading(false);
+        }
+    };
 
     const selectedRFQ = rfqs.find(r => r.id === selectedRFQId);
 
     // Get quotes for selected RFQ
     const rfqQuotes = quotes.filter(q => q.rfqId === selectedRFQId);
 
-    // Simulate vendor response if no quotes exist
-    const simulateVendorResponses = () => {
-        if (!selectedRFQ) return;
-        selectedRFQ.vendorIds.forEach(vid => {
-            // Random price between 50 and 150
-            const randomPrice = Math.floor(Math.random() * 100) + 50;
-            submitQuote(selectedRFQ.id, vid, randomPrice);
-        });
-        alert('Simulated vendor responses received!');
-    };
-
-    const handleCreatePO = (quoteId: string) => {
-        createPO(quoteId);
-        alert('Purchase Order Created Successfully!');
+    const handleCreatePO = async (quote: Quotation) => {
+        try {
+            setIsLoading(true);
+            await procurementService.createPO({
+                vendorId: quote.vendorId,
+                rfqId: quote.rfqId,
+                quotationId: quote.id,
+                date: new Date().toISOString(),
+                totalAmount: quote.totalAmount,
+                status: 'Open',
+                items: quote.quotationItems.map(qi => ({
+                    itemId: qi.itemId,
+                    quantity: qi.quantity,
+                    unitPrice: qi.unitPrice
+                }))
+            });
+            await procurementService.updateQuoteStatus(quote.id, 'Accepted');
+            await fetchData();
+            alert('Purchase Order Created Successfully!');
+        } catch (error) {
+            console.error('Error creating PO:', error);
+        } finally {
+            setIsLoading(false);
+        }
     };
 
     return (
@@ -61,16 +101,16 @@ const Quotations: React.FC = () => {
                 </div>
 
                 {/* Comparison View */}
-                <div className="flex-1 overflow-auto p-4">
+                <div className="flex-1 overflow-auto p-4 relative">
+                    {isLoading && (
+                        <div className="absolute inset-0 bg-vscode-bg/50 backdrop-blur-sm z-50 flex items-center justify-center">
+                            <div className="text-vscode-text-muted">Loading...</div>
+                        </div>
+                    )}
                     {selectedRFQ ? (
                         <div>
                             <div className="flex items-center justify-between mb-4">
                                 <h2 className="text-lg font-semibold">Quote Comparison - {selectedRFQ.rfqNo}</h2>
-                                {rfqQuotes.length === 0 && (
-                                    <button className="btn-secondary text-xs" onClick={simulateVendorResponses}>
-                                        Simulate Vendor Responses
-                                    </button>
-                                )}
                             </div>
 
                             {rfqQuotes.length > 0 ? (
@@ -109,13 +149,13 @@ const Quotations: React.FC = () => {
                                                             </tr>
                                                         </thead>
                                                         <tbody>
-                                                            {quote.items.map((item, i) => (
+                                                            {quote.quotationItems?.map((item: any, i: number) => (
                                                                 <tr key={i}>
                                                                     <td>
-                                                                        {masterItems.find(m => m.id === item.itemId)?.name || item.itemId}
-                                                                        <span className="text-vscode-text-muted ml-1">({masterItems.find(m => m.id === item.itemId)?.code})</span>
+                                                                        {masterItems.find((m: any) => m.id === item.itemId)?.name || item.itemId}
+                                                                        <span className="text-vscode-text-muted ml-1">({masterItems.find((m: any) => m.id === item.itemId)?.code})</span>
                                                                     </td>
-                                                                    <td className="text-right">{item.qty}</td>
+                                                                    <td className="text-right">{item.quantity}</td>
                                                                     <td className="text-right">${item.unitPrice}</td>
                                                                 </tr>
                                                             ))}
@@ -125,7 +165,7 @@ const Quotations: React.FC = () => {
                                                     {quote.status === 'Pending' && (
                                                         <button
                                                             className="btn-primary w-full flex items-center justify-center gap-2"
-                                                            onClick={() => handleCreatePO(quote.id)}
+                                                            onClick={() => handleCreatePO(quote)}
                                                         >
                                                             <Check size={14} />
                                                             <span>Approve & Create PO</span>

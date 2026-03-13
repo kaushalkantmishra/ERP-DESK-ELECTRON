@@ -1,11 +1,14 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Search, Plus, Tag } from 'lucide-react';
-import { useMockData } from '../contexts/MockContext';
+import { masterService } from '../services/masterService';
+import { Category, Uom } from '../types/models';
 
 const CategoryMaster = () => {
-    const { categories, addCategory, uoms } = useMockData();
+    const [categories, setCategories] = useState<Category[]>([]);
+    const [uoms, setUoms] = useState<Uom[]>([]);
     const [isAdding, setIsAdding] = useState(false);
     const [isSubmitting, setIsSubmitting] = useState(false);
+    const [isLoading, setIsLoading] = useState(true);
     const [searchTerm, setSearchTerm] = useState('');
 
     // Form State
@@ -13,18 +16,44 @@ const CategoryMaster = () => {
     const [description, setDescription] = useState('');
     const [uom, setUom] = useState('');
 
+    useEffect(() => {
+        fetchData();
+    }, []);
+
+    const fetchData = async () => {
+        try {
+            setIsLoading(true);
+            const [catData, uomData] = await Promise.all([
+                masterService.getCategories(),
+                masterService.getUoms()
+            ]);
+            setCategories(catData);
+            setUoms(uomData);
+        } catch (error) {
+            console.error('Error fetching data:', error);
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         setIsSubmitting(true);
-        await addCategory({ name, description, uom });
-        setIsSubmitting(false);
-        setIsAdding(false);
-        setName('');
-        setDescription('');
-        setUom('');
+        try {
+            await masterService.addCategory({ name, description, uom });
+            await fetchData(); // Refresh list
+            setIsAdding(false);
+            setName('');
+            setDescription('');
+            setUom('');
+        } catch (error) {
+            console.error('Error adding category:', error);
+        } finally {
+            setIsSubmitting(false);
+        }
     };
 
-    const filteredCategories = categories.filter(c => 
+    const filteredCategories = categories.filter(c =>
         c.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
         c.description?.toLowerCase().includes(searchTerm.toLowerCase())
     );
@@ -120,7 +149,9 @@ const CategoryMaster = () => {
                         </tr>
                     </thead>
                     <tbody>
-                        {filteredCategories.map(cat => (
+                        {isLoading ? (
+                            <tr><td colSpan={4} className="p-4 text-center text-vscode-text-muted">Loading categories...</td></tr>
+                        ) : filteredCategories.map(cat => (
                             <tr key={cat.id} className="hover:bg-vscode-list-hover">
                                 <td className="font-semibold text-vscode-text">{cat.name}</td>
                                 <td className="text-vscode-text-muted">{cat.description}</td>
@@ -128,13 +159,13 @@ const CategoryMaster = () => {
                                 <td className="font-mono text-xs text-vscode-text-muted">{cat.id}</td>
                             </tr>
                         ))}
-                        {filteredCategories.length === 0 && (
-                            <tr><td colSpan={3} className="p-4 text-center text-vscode-text-muted">No categories found</td></tr>
+                        {!isLoading && filteredCategories.length === 0 && (
+                            <tr><td colSpan={4} className="p-4 text-center text-vscode-text-muted">No categories found</td></tr>
                         )}
                     </tbody>
                 </table>
             </div>
-             <div className="px-4 py-1.5 border-t border-vscode-border bg-vscode-sidebar text-xs text-vscode-text-muted">
+            <div className="px-4 py-1.5 border-t border-vscode-border bg-vscode-sidebar text-xs text-vscode-text-muted">
                 <span>{filteredCategories.length} categories</span>
             </div>
         </div>

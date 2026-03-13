@@ -1,10 +1,11 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Plus, Search, Star } from 'lucide-react';
-import { useMockData } from '../contexts/MockContext';
+import { masterService } from '../services/masterService';
 import { Vendor } from '../types/models';
 
 const VendorMaster = () => {
-    const { vendors, addVendor } = useMockData();
+    const [vendors, setVendors] = useState<Vendor[]>([]);
+    const [isLoading, setIsLoading] = useState(true);
     const [isAdding, setIsAdding] = useState(false);
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [searchTerm, setSearchTerm] = useState('');
@@ -13,18 +14,40 @@ const VendorMaster = () => {
         name: '', email: '', phone: '', rating: 3, address: '', taxId: '', contactPerson: '', paymentTerms: '', active: true
     });
 
+    useEffect(() => {
+        fetchVendors();
+    }, []);
+
+    const fetchVendors = async () => {
+        try {
+            setIsLoading(true);
+            const data = await masterService.getVendors();
+            setVendors(data);
+        } catch (error) {
+            console.error('Error fetching vendors:', error);
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         setIsSubmitting(true);
-        await addVendor(newVendor);
-        setIsSubmitting(false);
-        setIsAdding(false);
-        setNewVendor({ name: '', email: '', phone: '', rating: 3, address: '', taxId: '', contactPerson: '', paymentTerms: '', active: true });
+        try {
+            await masterService.addVendor(newVendor);
+            await fetchVendors();
+            setIsAdding(false);
+            setNewVendor({ name: '', email: '', phone: '', rating: 3, address: '', taxId: '', contactPerson: '', paymentTerms: '', active: true });
+        } catch (error) {
+            console.error('Error adding vendor:', error);
+        } finally {
+            setIsSubmitting(false);
+        }
     };
 
-    const filteredVendors = vendors.filter(v => 
-        (v.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
-        v.email.toLowerCase().includes(searchTerm.toLowerCase())) &&
+    const filteredVendors = vendors.filter(v =>
+        (v.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+            v.email.toLowerCase().includes(searchTerm.toLowerCase())) &&
         v.rating >= minRating
     );
 
@@ -50,7 +73,7 @@ const VendorMaster = () => {
                     />
                 </div>
 
-                <select 
+                <select
                     className="form-select w-32"
                     value={minRating}
                     onChange={(e) => setMinRating(Number(e.target.value))}
@@ -60,7 +83,7 @@ const VendorMaster = () => {
                     <option value="4">4+ Stars</option>
                     <option value="5">5 Stars</option>
                 </select>
-                
+
                 <button
                     onClick={() => setIsAdding(!isAdding)}
                     className="btn-primary flex items-center gap-2 ml-auto"
@@ -133,11 +156,11 @@ const VendorMaster = () => {
                             />
                         </div>
                         <div className="form-group col-span-2">
-                             <label className="flex items-center gap-2 cursor-pointer">
-                                <input 
+                            <label className="flex items-center gap-2 cursor-pointer">
+                                <input
                                     type="checkbox"
                                     checked={newVendor.active}
-                                    onChange={e => setNewVendor({...newVendor, active: e.target.checked})}
+                                    onChange={e => setNewVendor({ ...newVendor, active: e.target.checked })}
                                 />
                                 <span className="text-sm">Active Vendor</span>
                             </label>
@@ -174,7 +197,9 @@ const VendorMaster = () => {
                         </tr>
                     </thead>
                     <tbody>
-                        {filteredVendors.map(vendor => (
+                        {isLoading ? (
+                            <tr><td colSpan={6} className="p-4 text-center text-vscode-text-muted">Loading vendors...</td></tr>
+                        ) : filteredVendors.map(vendor => (
                             <tr key={vendor.id} className="hover:bg-vscode-list-hover group">
                                 <td className="w-10 text-center">
                                     <div className={`w-2 h-2 rounded-full mx-auto ${vendor.active ? 'bg-green-500' : 'bg-vscode-text-muted'}`} title={vendor.active ? 'Active' : 'Inactive'}></div>
@@ -194,7 +219,7 @@ const VendorMaster = () => {
                                 <td className="text-sm">{vendor.address}</td>
                             </tr>
                         ))}
-                         {filteredVendors.length === 0 && (
+                        {!isLoading && filteredVendors.length === 0 && (
                             <tr>
                                 <td colSpan={6} className="text-center py-8 text-vscode-text-muted">
                                     No vendors found.
@@ -204,7 +229,7 @@ const VendorMaster = () => {
                     </tbody>
                 </table>
             </div>
-            
+
             <div className="px-4 py-1.5 border-t border-vscode-border bg-vscode-sidebar text-xs text-vscode-text-muted">
                 <span>{filteredVendors.length} vendors</span>
             </div>

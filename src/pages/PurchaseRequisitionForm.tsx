@@ -2,15 +2,17 @@ import React, { useState, useEffect } from 'react';
 import { Save, Send, X, Plus, Trash2, Upload, File, CheckCircle, XCircle } from 'lucide-react';
 import { useParams, useNavigate } from 'react-router-dom';
 
-import { useMockData } from '../contexts/MockContext';
+import { procurementService } from '../services/procurementService';
+import { useAppContext } from '../contexts/AppContext';
 import { Priority, PRStatus } from '../types/models';
 
 const PurchaseRequisitionForm: React.FC = () => {
     const { id } = useParams();
     const navigate = useNavigate();
-    const { currentUser, addPR, updatePRStatus, prs, items: masterItems, uoms } = useMockData();
+    const { currentUser, items: masterItems, uoms } = useAppContext();
     const [activeTab, setActiveTab] = useState<'details' | 'items' | 'attachments'>('details');
     const [isSubmitting, setIsSubmitting] = useState(false);
+    const [isLoading, setIsLoading] = useState(false);
 
     // Form State
     const [prNo, setPrNo] = useState('');
@@ -26,65 +28,77 @@ const PurchaseRequisitionForm: React.FC = () => {
     const [attachments, setAttachments] = useState<{ id: number; name: string; size: string }[]>([]);
 
     useEffect(() => {
-        if (id && prs.length > 0) {
-            const pr = prs.find(p => p.id === id || p.prNo === id);
+        if (id) {
+            fetchPR(id);
+        }
+    }, [id]);
+
+    const fetchPR = async (prId: string) => {
+        try {
+            setIsLoading(true);
+            const pr = await procurementService.getPR(prId);
             if (pr) {
                 setPrNo(pr.prNo);
                 setStatus(pr.status);
                 setDepartment(pr.department);
-                setReqDate(pr.items[0]?.requiredDate || ''); // Simplification
+                setReqDate(pr.items[0]?.requiredDate?.split('T')[0] || '');
                 setPriority(pr.priority);
                 setJustification(pr.justification);
                 setItems(pr.items.map((i, index) => ({
                     id: index + 1,
                     itemId: i.itemId,
-                    uom: masterItems.find(m => m.id === i.itemId)?.uom || '',
+                    uom: (i as any).item?.uom || '',
                     qty: i.quantity,
-                    estimatedPrice: 0, // Not in PR model, would come from item master or user input?
+                    estimatedPrice: (i as any).item?.price || 0,
                     remarks: ''
                 })));
             }
+        } catch (error) {
+            console.error('Error fetching PR:', error);
+        } finally {
+            setIsLoading(false);
         }
-    }, [id, prs, masterItems]);
+    };
 
     const handleSubmit = async () => {
         if (!currentUser) return;
         setIsSubmitting(true);
-        // If ID exists, we should probably update, but for now we only have addPR. 
-        // Assuming this form is CREATE only for now unless we add updatePR.
-        // If viewing existing, maybe just "Save" updates if Draft?
-        
-        if (!id) {
-            await addPR({
-                requestorId: currentUser.id,
-                department,
-                date: new Date().toISOString().split('T')[0],
-                priority,
-                status: 'Submitted',
-                justification,
-                items: items.filter(i => i.itemId).map(i => ({
-                    itemId: i.itemId,
-                    quantity: i.qty,
-                    requiredDate: reqDate
-                }))
-            });
-            console.log('PR Created');
-            navigate('/procurement/purchase-requisition');
+        try {
+            if (!id) {
+                await procurementService.createPR({
+                    requestorId: currentUser.id,
+                    department,
+                    date: new Date().toISOString(),
+                    priority,
+                    status: 'Submitted',
+                    justification,
+                    items: items.filter(i => i.itemId).map(i => ({
+                        itemId: i.itemId,
+                        quantity: i.qty,
+                        requiredDate: reqDate
+                    }))
+                });
+                navigate('/procurement/purchase-requisition');
+            }
+        } catch (error) {
+            console.error('Error submitting PR:', error);
+        } finally {
+            setIsSubmitting(false);
         }
-        setIsSubmitting(false);
     };
 
     const handleStatusChange = async (newStatus: PRStatus) => {
         if (!id) return;
         setIsSubmitting(true);
-        // finding the PR object first to get the internal ID if 'id' param is prNo
-        const pr = prs.find(p => p.id === id || p.prNo === id);
-        if (pr) {
-             await updatePRStatus(pr.id, newStatus);
-             setStatus(newStatus);
+        try {
+            await procurementService.updatePRStatus(id, newStatus);
+            setStatus(newStatus);
+            navigate('/procurement/purchase-requisition');
+        } catch (error) {
+            console.error('Error updating status:', error);
+        } finally {
+            setIsSubmitting(false);
         }
-        setIsSubmitting(false);
-        navigate('/procurement/purchase-requisition');
     };
 
     const addItem = () => {
@@ -121,7 +135,7 @@ const PurchaseRequisitionForm: React.FC = () => {
             <div className="px-4 pb-3 flex items-center gap-3 border-b border-vscode-border">
                 {id && status === 'Submitted' && (
                     <>
-                        <button 
+                        <button
                             className="bg-green-600 hover:bg-green-700 text-white px-3 py-1.5 rounded flex items-center gap-2 text-sm"
                             onClick={() => handleStatusChange('Approved')}
                             disabled={isSubmitting}
@@ -129,10 +143,10 @@ const PurchaseRequisitionForm: React.FC = () => {
                             <CheckCircle size={14} />
                             <span>Approve</span>
                         </button>
-                        <button 
-                             className="bg-red-600 hover:bg-red-700 text-white px-3 py-1.5 rounded flex items-center gap-2 text-sm"
-                             onClick={() => handleStatusChange('Rejected')}
-                             disabled={isSubmitting}
+                        <button
+                            className="bg-red-600 hover:bg-red-700 text-white px-3 py-1.5 rounded flex items-center gap-2 text-sm"
+                            onClick={() => handleStatusChange('Rejected')}
+                            disabled={isSubmitting}
                         >
                             <XCircle size={14} />
                             <span>Reject</span>
@@ -143,7 +157,7 @@ const PurchaseRequisitionForm: React.FC = () => {
 
                 {!isReadOnly && (
                     <>
-                         <button className="btn-primary flex items-center gap-2">
+                        <button className="btn-primary flex items-center gap-2">
                             <Save size={14} />
                             <span>Save Draft</span>
                         </button>
@@ -153,7 +167,7 @@ const PurchaseRequisitionForm: React.FC = () => {
                         </button>
                     </>
                 )}
-               
+
                 <button className="btn-secondary flex items-center gap-2 ml-auto" onClick={() => navigate('/procurement/purchase-requisition')}>
                     <X size={14} />
                     <span>Close</span>
@@ -184,7 +198,12 @@ const PurchaseRequisitionForm: React.FC = () => {
                 </button>
             </div>
 
-            <div className="flex-1 overflow-auto p-4">
+            <div className="flex-1 overflow-auto p-4 relative">
+                {isLoading && (
+                    <div className="absolute inset-0 bg-vscode-bg/50 backdrop-blur-sm z-50 flex items-center justify-center">
+                        <div className="text-vscode-text-muted">Loading...</div>
+                    </div>
+                )}
                 {activeTab === 'details' && (
                     <div className="w-full p-6 bg-vscode-sidebar rounded-xl border border-vscode-border shadow-sm">
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">

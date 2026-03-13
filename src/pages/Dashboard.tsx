@@ -1,39 +1,71 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { FileText, ShoppingCart, AlertTriangle, TrendingDown, Plus, Package, DollarSign, Activity } from 'lucide-react';
-import { useMockData } from '../contexts/MockContext';
 import { useNavigate } from 'react-router-dom';
+import { procurementService } from '../services/procurementService';
+import { inventoryService } from '../services/inventoryService';
+import { masterService } from '../services/masterService';
+import { financeService } from '../services/financeService';
+import { PurchaseRequisition, PurchaseOrder, Item, StockLevel, Invoice } from '../types/models';
+import { useAppContext } from '../contexts/AppContext';
 
 const Dashboard: React.FC = () => {
-    const { prs, pos, items, currentUser, stockLevels } = useMockData();
+    const { currentUser } = useAppContext() as any;
     const navigate = useNavigate();
+
+    const [prs, setPrs] = useState<PurchaseRequisition[]>([]);
+    const [pos, setPos] = useState<PurchaseOrder[]>([]);
+    const [items, setItems] = useState<Item[]>([]);
+    const [stockLevels, setStockLevels] = useState<StockLevel[]>([]);
+    const [invoices, setInvoices] = useState<Invoice[]>([]);
+    const [isLoading, setIsLoading] = useState(true);
+
+    useEffect(() => {
+        fetchData();
+    }, []);
+
+    const fetchData = async () => {
+        try {
+            setIsLoading(true);
+            const [prData, poData, itemData, stockData, invData] = await Promise.all([
+                procurementService.getPRs(),
+                procurementService.getPOs(),
+                masterService.getItems(),
+                inventoryService.getStockLevels(),
+                financeService.getInvoices()
+            ]);
+            setPrs(prData);
+            setPos(poData);
+            setItems(itemData);
+            setStockLevels(stockData);
+            setInvoices(invData);
+        } catch (error) {
+            console.error('Error fetching dashboard data:', error);
+        } finally {
+            setIsLoading(false);
+        }
+    };
 
     // Calculate Stock Stats using StockLevels
     // Group stock by item
     const itemStockMap = new Map<string, { current: number, min: number }>();
     stockLevels.forEach(sl => {
         const current = itemStockMap.get(sl.itemId) || { current: 0, min: 0 };
-        current.current += sl.quantity;
-        current.min += sl.minStockLevel;
+        current.current += Number(sl.quantity);
+        current.min += Number(sl.minStockLevel || 0);
         itemStockMap.set(sl.itemId, current);
     });
 
     const pendingPRs = prs.filter(pr => pr.status === 'Submitted').length;
-    const openPOs = pos.filter(po => po.status === 'Sent' || po.status === 'Partially Received').length;
-    
+    const openPOs = pos.filter(po => po.status === 'Sent' || (po.status as any) === 'Open' || (po.status as any) === 'Partially Received').length;
+
     // Low stock items (where total stock < total min level)
     const lowStockItems = items.filter(i => {
         const stock = itemStockMap.get(i.id);
         if (!stock) return false;
-        return stock.current <= stock.min;
+        return stock.current <= (i.reorderLevel || stock.min);
     }).length;
 
     const urgentPRs = prs.filter(pr => pr.priority === 'Urgent' && pr.status !== 'Completed').length;
-
-    // Derived Activity (Mock)
-    const recentActivity = [
-        ...prs.slice(0, 3).map(pr => ({ id: pr.prNo, type: 'PR Created', dept: pr.department, date: pr.date, status: pr.status })),
-        ...pos.slice(0, 3).map(po => ({ id: po.poNo, type: 'PO Sent', dept: 'Procurement', date: po.date, status: po.status }))
-    ].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()).slice(0, 5);
 
     const kpis = [
         { label: 'Pending PRs', value: pendingPRs, icon: <FileText size={20} />, color: 'text-status-info' },
@@ -42,9 +74,10 @@ const Dashboard: React.FC = () => {
         { label: 'Urgent Requests', value: urgentPRs, icon: <AlertTriangle size={20} />, color: 'text-priority-urgent' },
     ];
 
-    // Dummy Spending Data for Chart
-    const monthlySpend = [4500, 5200, 4800, 6100, 5500, 7200];
-    const maxSpend = Math.max(...monthlySpend);
+    // Spending Data from Invoices
+    const totalSpent = invoices.reduce((acc, inv) => acc + Number(inv.amount), 0);
+    const monthlySpend = [0, 0, 0, 0, 0, totalSpent]; // Simplified for now
+    const maxSpend = Math.max(...monthlySpend, 1000);
 
     // Inventory Distribution
     const inventoryByCategory = items.reduce((acc, item) => {
@@ -56,12 +89,23 @@ const Dashboard: React.FC = () => {
 
     // Upcoming Deliveries
     const upcomingDeliveries = pos
-        .filter(po => ['Sent', 'Partially Received', 'Acknowledged'].includes(po.status))
+        .filter(po => ['Sent', 'Partially Received', 'Acknowledged', 'Open'].includes(po.status as any))
         .sort((a, b) => new Date(a.deliveryDate).getTime() - new Date(b.deliveryDate).getTime())
         .slice(0, 3);
 
+    // Recent Activity
+    const recentActivity = [
+        ...prs.slice(0, 5).map(pr => ({ id: pr.prNo, type: 'PR Created', dept: pr.department, date: pr.date, status: pr.status })),
+        ...pos.slice(0, 5).map(po => ({ id: po.poNo, type: 'PO Sent', dept: 'Procurement', date: po.date, status: po.status }))
+    ].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()).slice(0, 5);
+
     return (
-        <div className="p-4 flex flex-col gap-4">
+        <div className="p-4 flex flex-col gap-4 relative">
+            {isLoading && (
+                <div className="absolute inset-0 bg-vscode-bg/50 backdrop-blur-sm z-50 flex items-center justify-center">
+                    <div className="text-vscode-text-muted">Loading Dashboard...</div>
+                </div>
+            )}
             {/* Header & Quick Actions */}
             <div className="flex items-center justify-between">
                 <div className="text-xs text-vscode-text-muted">
@@ -105,7 +149,7 @@ const Dashboard: React.FC = () => {
                                 <DollarSign size={16} className="text-vscode-accent" />
                                 Monthly Spending Trend (6 Months)
                             </h3>
-                            <span className="text-xs text-vscode-text-muted">Total: $33,300</span>
+                            <span className="text-xs text-vscode-text-muted">Total: ${totalSpent.toLocaleString()}</span>
                         </div>
                         <div className="h-40 flex justify-between gap-2 px-2">
                             {monthlySpend.map((value, i) => (
