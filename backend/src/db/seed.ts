@@ -1,9 +1,35 @@
 import { db } from './drizzle.js';
 import * as schema from './schema.js';
-import * as bcrypt from 'bcryptjs';
+import bcrypt from 'bcryptjs';
 
 async function seed() {
     console.log('Seeding metadata...');
+
+    console.log('Clearing existing data...');
+    // Delete in order to respect foreign key constraints
+    await db.delete(schema.activityLogs);
+    await db.delete(schema.stockTransactions);
+    await db.delete(schema.stockLevels);
+    await db.delete(schema.invoices);
+    await db.delete(schema.grnItems);
+    await db.delete(schema.grns);
+    await db.delete(schema.poItems);
+    await db.delete(schema.purchaseOrders);
+    await db.delete(schema.quotationItems);
+    await db.delete(schema.quotations);
+    await db.delete(schema.rfqVendors);
+    await db.delete(schema.rfqs);
+    await db.delete(schema.prItems);
+    await db.delete(schema.purchaseRequisitions);
+    await db.delete(schema.materialRequestItems);
+    await db.delete(schema.materialRequests);
+    await db.delete(schema.items);
+    await db.delete(schema.categories);
+    await db.delete(schema.uoms);
+    await db.delete(schema.warehouses);
+    await db.delete(schema.vendors);
+    await db.delete(schema.users);
+    console.log('Data cleared.');
 
     // 1. UoMs
     const [uomPcs] = await db.insert(schema.uoms).values([

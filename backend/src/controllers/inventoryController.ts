@@ -7,6 +7,7 @@ import {
     purchaseOrders
 } from '../db/schema.js';
 import { eq, sql, and } from 'drizzle-orm';
+import { generateId } from '../utils/idGenerator.js';
 
 // GRNs
 export const getGRNs = async (req: Request, res: Response) => {
@@ -32,13 +33,43 @@ export const createGRN = async (req: Request, res: Response) => {
     const { items, poId, warehouseId, ...grnData } = req.body;
     try {
         const newGRN = await db.transaction(async (tx) => {
-            const [grn] = await tx.insert(grns).values({ ...grnData, poId, warehouseId }).returning();
+            const [grn] = await tx.insert(grns).values({
+                ...grnData,
+                poId,
+                warehouseId,
+                grnNo: generateId('GRN')
+            }).returning();
             if (items && items.length > 0) {
                 await tx.insert(grnItems).values(
                     items.map((item: any) => ({ ...item, grnId: grn.id }))
                 );
+
+                // Update Stock for each item
+                for (const item of items) {
+                    // Create Stock Transaction
+                    await tx.insert(stockTransactions).values({
+                        itemId: item.itemId,
+                        type: 'Receipt',
+                        quantity: item.acceptedQty.toString(),
+                        targetWarehouseId: warehouseId,
+                        date: new Date(),
+                        notes: `GRN: ${grn.grnNo}`
+                    });
+
+                    // Update Stock Level (Upsert)
+                    await tx.insert(stockLevels)
+                        .values({ 
+                            itemId: item.itemId, 
+                            warehouseId: warehouseId, 
+                            quantity: item.acceptedQty.toString() 
+                        })
+                        .onConflictDoUpdate({
+                            target: [stockLevels.itemId, stockLevels.warehouseId],
+                            set: { quantity: sql`${stockLevels.quantity} + ${item.acceptedQty.toString()}` }
+                        });
+                }
             }
-            // Update PO Status if needed
+            // Update PO Status
             await tx.update(purchaseOrders)
                 .set({ status: 'Completed' })
                 .where(eq(purchaseOrders.id, poId as string));
@@ -147,7 +178,10 @@ export const createMaterialRequest = async (req: Request, res: Response) => {
     const { items, ...mrData } = req.body;
     try {
         const newMR = await db.transaction(async (tx) => {
-            const [mr] = await tx.insert(materialRequests).values(mrData).returning();
+            const [mr] = await tx.insert(materialRequests).values({
+                ...mrData,
+                requestNo: generateId('MR')
+            }).returning();
             if (items && items.length > 0) {
                 await tx.insert(materialRequestItems).values(
                     items.map((item: any) => ({ ...item, mrId: mr.id }))

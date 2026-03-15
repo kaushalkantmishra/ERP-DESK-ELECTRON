@@ -2,6 +2,7 @@ import type { Request, Response } from 'express';
 import { db } from '../db/drizzle.js';
 import { invoices } from '../db/schema.js';
 import { eq } from 'drizzle-orm';
+import { generateId } from '../utils/idGenerator.js';
 
 export const getInvoices = async (req: Request, res: Response) => {
     try {
@@ -14,7 +15,10 @@ export const getInvoices = async (req: Request, res: Response) => {
 
 export const createInvoice = async (req: Request, res: Response) => {
     try {
-        const newInvoice = await db.insert(invoices).values(req.body).returning();
+        const newInvoice = await db.insert(invoices).values({
+            ...req.body,
+            invoiceNo: generateId('INV')
+        }).returning();
         res.status(201).json(newInvoice[0]);
     } catch (error) {
         res.status(500).json({ message: 'Error creating invoice' });

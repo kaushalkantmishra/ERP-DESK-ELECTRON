@@ -8,6 +8,13 @@
       "when": 1773388787503,
       "tag": "0000_slimy_stepford_cuckoos",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1773548471950,
+      "tag": "0001_talented_chat",
+      "breakpoints": true
     }
   ]
 }

@@ -159,8 +159,8 @@ export const grnItems = pgTable('grn_items', {
 
 // Stock Levels
 export const stockLevels = pgTable('stock_levels', {
-    itemId: uuid('item_id').references(() => items.id),
-    warehouseId: uuid('warehouse_id').references(() => warehouses.id),
+    itemId: uuid('item_id').references(() => items.id).notNull(),
+    warehouseId: uuid('warehouse_id').references(() => warehouses.id).notNull(),
     quantity: decimal('quantity', { precision: 12, scale: 2 }).notNull().default('0.00'),
     minStockLevel: decimal('min_stock_level', { precision: 12, scale: 2 }).default('0.00'),
 }, (table) => {
@@ -244,7 +244,7 @@ export const itemsRelations = relations(items, ({ one, many }) => ({
 
 export const purchaseRequisitionsRelations = relations(purchaseRequisitions, ({ one, many }) => ({
     requestor: one(users, { fields: [purchaseRequisitions.requestorId], references: [users.id] }),
-    prItems: many(prItems),
+    items: many(prItems),
     rfq: one(rfqs, { fields: [purchaseRequisitions.id], references: [rfqs.prId] }),
 }));
 
