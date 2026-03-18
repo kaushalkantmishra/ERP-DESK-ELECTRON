@@ -1,33 +1,29 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Search } from 'lucide-react';
 import { inventoryService } from '../services/inventoryService';
 import { masterService } from '../services/masterService';
-import { StockLevel, Item, Warehouse } from '../types/models';
+import { Item, StockLevel, Warehouse } from '../types/models';
 
-const StockManagement = () => {
+const StockManagement: React.FC = () => {
     const [items, setItems] = useState<Item[]>([]);
     const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
     const [stockLevels, setStockLevels] = useState<StockLevel[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [filterItem, setFilterItem] = useState('');
     const [filterWarehouse, setFilterWarehouse] = useState('');
-
-    // Adjustment Modal State
     const [adjustingStock, setAdjustingStock] = useState<StockLevel | null>(null);
     const [adjQty, setAdjQty] = useState(0);
     const [adjReason, setAdjReason] = useState('');
 
-    useEffect(() => {
-        fetchData();
-    }, []);
+    useEffect(() => { void fetchData(); }, []);
 
-    const fetchData = async () => {
+    async function fetchData() {
         try {
             setIsLoading(true);
             const [itemData, whData, stockData] = await Promise.all([
                 masterService.getItems(),
                 masterService.getWarehouses(),
-                inventoryService.getStockLevels()
+                inventoryService.getStockLevels(),
             ]);
             setItems(itemData);
             setWarehouses(whData);
@@ -37,74 +33,60 @@ const StockManagement = () => {
         } finally {
             setIsLoading(false);
         }
-    };
+    }
 
-    const handleAdjustment = async (e: React.FormEvent) => {
+    async function handleAdjustment(e: React.FormEvent) {
         e.preventDefault();
-        if (!adjustingStock) return;
+        if (!adjustingStock || adjQty === 0 || !adjReason.trim()) return;
 
         try {
             await inventoryService.createStockTransaction({
                 itemId: adjustingStock.itemId,
-                type: 'Adjustment',
-                quantity: adjQty, // Quantity to ADD (negative to subtract)
-                sourceWarehouseId: adjustingStock.warehouseId, // Warehouse being adjusted
-                notes: adjReason
+                warehouseId: adjustingStock.warehouseId,
+                type: adjQty > 0 ? 'Adjustment+' : 'Adjustment-',
+                quantity: Math.abs(adjQty),
+                referenceType: 'Adjustment',
+                referenceId: `MANUAL-${Date.now()}`,
+                notes: adjReason,
+                idempotencyKey: `stock-adjust-${adjustingStock.itemId}-${adjustingStock.warehouseId}-${Date.now()}`,
             });
-
             await fetchData();
             setAdjustingStock(null);
             setAdjQty(0);
             setAdjReason('');
-        } catch (error) {
-            console.error('Error adjusting stock:', error);
+        } catch (error: any) {
+            console.error(error);
+            alert(error?.response?.data?.message || 'Unable to adjust stock');
         }
-    };
+    }
 
-    const filteredLevels = stockLevels.filter(sl => {
-        const item = items.find(i => i.id === sl.itemId);
-        const itemNameMatch = item?.name.toLowerCase().includes(filterItem.toLowerCase());
-        const whMatch = filterWarehouse ? sl.warehouseId === filterWarehouse : true;
-        return itemNameMatch && whMatch;
+    const filteredLevels = stockLevels.filter((level) => {
+        const item = items.find((entry) => entry.id === level.itemId);
+        const itemNameMatch = item ? `${item.code} ${item.name}`.toLowerCase().includes(filterItem.toLowerCase()) : true;
+        const warehouseMatch = filterWarehouse ? level.warehouseId === filterWarehouse : true;
+        return itemNameMatch && warehouseMatch;
     });
 
     return (
         <div className="flex flex-col h-full relative">
-            {isLoading && (
-                <div className="absolute inset-0 bg-vscode-bg/50 backdrop-blur-sm z-50 flex items-center justify-center">
-                    <div className="text-vscode-text-muted">Updating Inventory...</div>
-                </div>
-            )}
-            {/* Breadcrumb */}
+            {isLoading && <div className="absolute inset-0 bg-vscode-bg/50 backdrop-blur-sm z-50 flex items-center justify-center"><div className="text-vscode-text-muted">Updating inventory...</div></div>}
             <div className="text-xs text-vscode-text-muted px-4 pt-3 pb-2 flex items-center gap-2">
                 <span>Inventory</span>
                 <span>/</span>
                 <span className="text-vscode-text">Stock Management</span>
             </div>
 
-            {/* Toolbar */}
             <div className="px-4 pb-3 flex items-center gap-3 border-b border-vscode-border">
                 <div className="flex items-center gap-2 flex-1 max-w-md">
                     <Search size={14} className="text-vscode-text-muted" />
-                    <input
-                        type="text"
-                        placeholder="Search Item..."
-                        className="input-vscode flex-1"
-                        value={filterItem}
-                        onChange={e => setFilterItem(e.target.value)}
-                    />
+                    <input type="text" placeholder="Search item" className="input-vscode flex-1" value={filterItem} onChange={(e) => setFilterItem(e.target.value)} />
                 </div>
-                <select
-                    className="input-vscode pl-2 pr-4 bg-transparent"
-                    value={filterWarehouse}
-                    onChange={e => setFilterWarehouse(e.target.value)}
-                >
+                <select className="input-vscode pl-2 pr-4 bg-transparent" value={filterWarehouse} onChange={(e) => setFilterWarehouse(e.target.value)}>
                     <option value="">All Warehouses</option>
-                    {warehouses.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
+                    {warehouses.map((warehouse) => <option key={warehouse.id} value={warehouse.id}>{warehouse.name}</option>)}
                 </select>
             </div>
 
-            {/* Stock List */}
             <div className="flex-1 overflow-auto">
                 <table className="table-vscode">
                     <thead className="sticky top-0 bg-vscode-bg">
@@ -113,90 +95,49 @@ const StockManagement = () => {
                             <th>Item Name</th>
                             <th>Warehouse</th>
                             <th>Current Qty</th>
+                            <th>Reorder</th>
                             <th>Actions</th>
                         </tr>
                     </thead>
                     <tbody>
-                        {filteredLevels.map((sl, idx) => {
-                            const item = items.find(i => i.id === sl.itemId);
-                            const wh = warehouses.find(w => w.id === sl.warehouseId);
+                        {filteredLevels.map((level, index) => {
+                            const item = items.find((entry) => entry.id === level.itemId);
+                            const warehouse = warehouses.find((entry) => entry.id === level.warehouseId);
+                            const low = Number(level.quantity) <= Number(level.minStockLevel || item?.reorderLevel || 0);
                             return (
-                                <tr key={idx} className="hover:bg-vscode-list-hover">
+                                <tr key={`${level.itemId}-${level.warehouseId}-${index}`}>
                                     <td className="font-mono text-xs font-semibold">{item?.code}</td>
                                     <td>{item?.name}</td>
-                                    <td className="text-vscode-text-muted">{wh?.name}</td>
-                                    <td className={`font-mono text-right font-bold ${sl.quantity < sl.minStockLevel ? 'text-status-error' : 'text-status-success'}`}>
-                                        {sl.quantity} <span className="text-[10px] text-vscode-text-muted font-normal">{item?.uom}</span>
-                                    </td>
-                                    <td>
-                                        <button
-                                            onClick={() => setAdjustingStock(sl)}
-                                            className="text-vscode-accent hover:underline text-xs"
-                                        >
-                                            Adjust
-                                        </button>
-                                    </td>
+                                    <td>{warehouse?.name}</td>
+                                    <td className={`font-mono ${low ? 'text-status-error' : 'text-status-success'}`}>{Number(level.quantity).toFixed(2)} {item?.uom}</td>
+                                    <td>{Number(level.minStockLevel || item?.reorderLevel || 0).toFixed(2)}</td>
+                                    <td><button className="text-vscode-accent hover:underline text-xs" onClick={() => setAdjustingStock(level)}>Adjust</button></td>
                                 </tr>
                             );
                         })}
-                        {filteredLevels.length === 0 && (
-                            <tr><td colSpan={5} className="p-4 text-center text-vscode-text-muted">No stock records found</td></tr>
-                        )}
                     </tbody>
                 </table>
             </div>
 
-            <div className="px-4 py-1.5 border-t border-vscode-border bg-vscode-sidebar text-xs text-vscode-text-muted">
-                <span>{filteredLevels.length} records</span>
-            </div>
-
-            {/* Adjustment Modal */}
             {adjustingStock && (
-                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+                <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
                     <div className="bg-vscode-bg border border-vscode-border p-6 rounded shadow-lg w-96">
                         <h2 className="text-lg font-bold text-vscode-text mb-4">Adjust Stock</h2>
-                        <div className="mb-4 text-sm text-vscode-text-muted bg-vscode-sidebar p-2 rounded">
-                            Item: <span className="text-vscode-text font-semibold">{items.find(i => i.id === adjustingStock.itemId)?.name}</span> <br />
-                            Warehouse: <span className="text-vscode-text font-semibold">{warehouses.find(w => w.id === adjustingStock.warehouseId)?.name}</span> <br />
-                            Current: <span className="text-vscode-text font-mono">{adjustingStock.quantity}</span>
-                        </div>
-
                         <form onSubmit={handleAdjustment}>
-                            <div className="mb-4 form-group">
+                            <div className="mb-4 text-sm text-vscode-text-muted bg-vscode-sidebar p-2 rounded">
+                                Current stock: {adjustingStock.quantity}
+                            </div>
+                            <div className="mb-4">
                                 <label className="form-label">Adjustment Quantity (+/-)</label>
-                                <input
-                                    type="number"
-                                    className="input-vscode w-full"
-                                    value={adjQty}
-                                    onChange={e => setAdjQty(Number(e.target.value))}
-                                    required
-                                />
-                                <span className="text-xs text-vscode-text-muted">Negative to reduce, Positive to add.</span>
+                                <input type="number" className="input-vscode w-full" value={adjQty} onChange={(e) => setAdjQty(Number(e.target.value))} required />
                             </div>
-                            <div className="mb-4 form-group">
+                            <div className="mb-4">
                                 <label className="form-label">Reason</label>
-                                <input
-                                    type="text"
-                                    className="input-vscode w-full"
-                                    value={adjReason}
-                                    onChange={e => setAdjReason(e.target.value)}
-                                    required
-                                />
+                                <input type="text" className="input-vscode w-full" value={adjReason} onChange={(e) => setAdjReason(e.target.value)} required />
                             </div>
-                            <div className="flex justify-end gap-2 pt-2">
-                                <button
-                                    type="button"
-                                    onClick={() => setAdjustingStock(null)}
-                                    className="btn-secondary"
-                                >
-                                    Cancel
-                                </button>
-                                <button
-                                    type="submit"
-                                    className="btn-primary"
-                                >
-                                    Confirm
-                                </button>
+                            <div className="flex justify-end gap-2">
+                                <button type="button" className="btn-secondary" onClick={() => setAdjustingStock(null)}>Cancel</button>
+                                <button type="submit" className="btn-primary">Confirm</button>
                             </div>
                         </form>
                     </div>

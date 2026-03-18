@@ -1,16 +1,14 @@
-// User Roles & Auth
 export type Role = 'Admin' | 'Procurement' | 'Store' | 'Dept' | 'Finance' | 'Vendor';
 
 export interface User {
     id: string;
     name: string;
     email: string;
-    password?: string; // For mock login
+    password?: string;
     role: Role;
     department?: string;
 }
 
-// Master Data
 export interface Uom {
     id: string;
     code: string;
@@ -23,7 +21,7 @@ export interface Item {
     name: string;
     category: string;
     uom: string;
-    price: number; // Standard/Last Purchase Price
+    price: number;
     active: boolean;
     taxRate?: number;
     reorderLevel?: number;
@@ -34,7 +32,7 @@ export interface Vendor {
     name: string;
     email: string;
     phone: string;
-    rating: number; // 1-5
+    rating: number;
     address: string;
     taxId?: string;
     paymentTerms?: string;
@@ -46,7 +44,7 @@ export interface Category {
     id: string;
     name: string;
     description?: string;
-    uom?: string; // e.g. PCS, KG, L
+    uom?: string;
 }
 
 export interface Warehouse {
@@ -57,27 +55,42 @@ export interface Warehouse {
     managerId?: string;
 }
 
-// Inventory Operations
 export interface StockLevel {
     itemId: string;
     warehouseId: string;
     quantity: number;
-    minStockLevel: number; // Reorder point
+    minStockLevel: number;
+    versionNo?: number;
+    item?: Item;
+    warehouse?: Warehouse;
 }
 
-export type StockMovementType = 'Issue' | 'Transfer' | 'Adjustment' | 'Receipt';
+export type StockMovementType = 'Issue' | 'Transfer' | 'Adjustment+' | 'Adjustment-' | 'Receipt' | 'Reversal';
+export type StockReferenceType = 'GRN' | 'Material Request' | 'Stock Transfer' | 'Stock Count' | 'Adjustment' | 'GRN Reversal';
 
 export interface StockTransaction {
     id: string;
     itemId: string;
+    warehouseId: string;
     type: StockMovementType;
     quantity: number;
     date: string;
-    sourceWarehouseId?: string; // For Transfer/Issue
-    targetWarehouseId?: string; // For Transfer/Receipt
-    referenceId?: string; // PO URL, GRN ID, or Dept Request ID
+    referenceType: StockReferenceType;
+    referenceId: string;
+    sourceWarehouseId?: string;
+    targetWarehouseId?: string;
     notes?: string;
-    performedBy: string;
+    performedBy?: string;
+    item?: Item;
+    warehouse?: Warehouse;
+    sourceWarehouse?: Warehouse;
+    targetWarehouse?: Warehouse;
+}
+
+export interface MaterialRequestLine {
+    itemId: string;
+    quantity: number;
+    item?: Item;
 }
 
 export interface MaterialRequest {
@@ -86,18 +99,22 @@ export interface MaterialRequest {
     requestorId: string;
     department: string;
     date: string;
-    items: { itemId: string; quantity: number }[];
     status: 'Requested' | 'Approved' | 'Issued' | 'Rejected';
+    items: MaterialRequestLine[];
+    requestor?: User;
+    materialRequestItems?: MaterialRequestLine[];
 }
 
-// Procurement Flow
 export type Priority = 'Low' | 'Medium' | 'High' | 'Urgent';
-export type PRStatus = 'Draft' | 'Submitted' | 'Approved' | 'Rejected' | 'RFQ Created' | 'Completed';
+export type PRStatus = 'Draft' | 'Submitted' | 'Approved' | 'Rejected' | 'PO Created' | 'Closed' | 'Cancelled';
 
 export interface PRItem {
+    id?: string;
+    prId?: string;
     itemId: string;
     quantity: number;
     requiredDate: string;
+    item?: Item;
 }
 
 export interface PurchaseRequisition {
@@ -108,12 +125,15 @@ export interface PurchaseRequisition {
     date: string;
     priority: Priority;
     status: PRStatus;
-    items: PRItem[];
     justification: string;
-    comments?: string[];
+    submittedAt?: string;
+    approvedAt?: string;
+    rejectedAt?: string;
+    rejectionReason?: string;
+    requestor?: User;
+    prItems?: PRItem[];
 }
 
-// RFQ & Quotation
 export type RFQStatus = 'Created' | 'Sent' | 'Closed';
 
 export interface RFQ {
@@ -123,42 +143,72 @@ export interface RFQ {
     createdDate: string;
     dueDate: string;
     status: RFQStatus;
-    vendorIds: string[]; // Vendors sent to
+    vendorIds?: string[];
+}
+
+export interface QuotationLine {
+    itemId: string;
+    qty: number;
+    unitPrice: number;
+    item?: Item;
 }
 
 export interface Quotation {
     id: string;
     rfqId: string;
     vendorId: string;
-    quotationItems: {
-        itemId: string;
-        quantity: number;
-        unitPrice: number;
-    }[];
     totalAmount: number;
     deliveryDate: string;
     submittedDate: string;
     status: 'Pending' | 'Accepted' | 'Rejected';
+    quotationItems?: QuotationLine[];
     vendor?: Vendor;
 }
 
-// Purchase Order
-export type POStatus = 'Sent' | 'Acknowledged' | 'Partially Received' | 'Completed' | 'Closed';
+export type POStatus = 'Draft' | 'Issued' | 'Partially Received' | 'Fully Received' | 'Closed' | 'Cancelled';
+
+export interface PurchaseOrderLine {
+    id: string;
+    poId?: string;
+    itemId: string;
+    orderedQty: number;
+    unitPrice: number;
+    receivedQty: number;
+    acceptedQty: number;
+    invoicedQty: number;
+    cancelledQty: number;
+    item?: Item;
+}
 
 export interface PurchaseOrder {
     id: string;
     poNo: string;
-    rfqId?: string; // Could be direct PO
+    prId?: string;
+    rfqId?: string;
     vendorId: string;
     date: string;
-    items: { itemId: string; qty: number; unitPrice: number }[];
     totalAmount: number;
     status: POStatus;
     deliveryDate: string;
+    poItems: PurchaseOrderLine[];
+    vendor?: Vendor;
+    pr?: PurchaseRequisition;
 }
 
-// Inventory / GRN
-export type GRNStatus = 'Pending' | 'Quality Check' | 'Completed';
+export type GRNStatus = 'Draft' | 'Posted' | 'Reversed';
+
+export interface GRNLine {
+    id?: string;
+    poItemId: string;
+    itemId: string;
+    receivedQty: number;
+    acceptedQty: number;
+    rejectedQty: number;
+    rejectionReason?: string;
+    disposition?: string;
+    item?: Item;
+    poItem?: PurchaseOrderLine;
+}
 
 export interface GRN {
     id: string;
@@ -166,33 +216,79 @@ export interface GRN {
     poId: string;
     receivedDate: string;
     receivedBy: string;
-    warehouseId: string; // Where items are stored
-    items: { itemId: string; receivedQty: number; acceptedQty: number; rejectedQty: number }[];
+    warehouseId: string;
     status: GRNStatus;
+    grnItems?: GRNLine[];
+    po?: PurchaseOrder;
+    warehouse?: Warehouse;
 }
 
-// Finance
-export type InvoiceStatus = 'Received' | 'Verified' | 'Approved' | 'Paid' | 'Rejected';
+export type InvoiceStatus = 'Draft' | 'Entered' | 'Matched' | 'Approved' | 'Partially Paid' | 'Paid' | 'Disputed' | 'Cancelled';
+
+export interface InvoiceLine {
+    id?: string;
+    invoiceId?: string;
+    poItemId: string;
+    itemId: string;
+    quantity: number;
+    unitPrice: number;
+    lineAmount: number;
+    item?: Item;
+    poItem?: PurchaseOrderLine;
+}
 
 export interface Invoice {
     id: string;
     invoiceNo: string;
+    vendorInvoiceNo: string;
     vendorId: string;
     poId: string;
     date: string;
     dueDate: string;
     amount: number;
+    matchedAmount: number;
+    paidAmount: number;
+    balanceAmount: number;
     status: InvoiceStatus;
     remarks?: string;
+    vendor?: Vendor;
+    po?: PurchaseOrder;
+    invoiceLines?: InvoiceLine[];
 }
 
-// Audit & Control
+export type PaymentStatus = 'Draft' | 'Posted' | 'Cancelled';
+
+export interface PaymentAllocation {
+    id?: string;
+    paymentId?: string;
+    invoiceId: string;
+    allocatedAmount: number;
+    invoice?: Invoice;
+}
+
+export interface Payment {
+    id: string;
+    paymentNo: string;
+    vendorId: string;
+    paymentDate: string;
+    amount: number;
+    method: string;
+    status: PaymentStatus;
+    referenceNo?: string;
+    remarks?: string;
+    vendor?: Vendor;
+    paymentAllocations?: PaymentAllocation[];
+}
+
 export interface ActivityLog {
     id: string;
     userId: string;
     userName: string;
     action: string;
     description: string;
+    entityType?: string;
+    entityId?: string;
+    payload?: unknown;
     timestamp: string;
     module: 'Auth' | 'Procurement' | 'Inventory' | 'Finance' | 'System';
 }

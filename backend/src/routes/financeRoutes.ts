@@ -1,13 +1,22 @@
 import { Router } from 'express';
-import { getInvoices, createInvoice, updateInvoiceStatus } from '../controllers/financeController.js';
-import { authMiddleware } from '../middleware/auth.js';
+import {
+    getInvoices,
+    createInvoice,
+    updateInvoiceStatus,
+    getPayments,
+    createPayment,
+} from '../controllers/financeController.js';
+import { authMiddleware, roleMiddleware } from '../middleware/auth.js';
 
 const router = Router();
 
 router.use(authMiddleware);
 
 router.get('/invoices', getInvoices);
-router.post('/invoice', createInvoice);
-router.patch('/invoice/:id/status', updateInvoiceStatus);
+router.post('/invoice', roleMiddleware(['Admin', 'Finance']), createInvoice);
+router.patch('/invoice/:id/status', roleMiddleware(['Admin', 'Finance']), updateInvoiceStatus);
+
+router.get('/payments', getPayments);
+router.post('/payment', roleMiddleware(['Admin', 'Finance']), createPayment);
 
 export default router;

@@ -4,20 +4,20 @@ import {
     getStockLevels, getTransactions, createStockTransaction,
     getMaterialRequests, createMaterialRequest
 } from '../controllers/inventoryController.js';
-import { authMiddleware } from '../middleware/auth.js';
+import { authMiddleware, roleMiddleware } from '../middleware/auth.js';
 
 const router = Router();
 
 router.use(authMiddleware);
 
 router.get('/grns', getGRNs);
-router.post('/grn', createGRN);
+router.post('/grn', roleMiddleware(['Admin', 'Store']), createGRN);
 
 router.get('/stock/levels', getStockLevels);
 router.get('/stock/transactions', getTransactions);
-router.post('/stock/transaction', createStockTransaction);
+router.post('/stock/transaction', roleMiddleware(['Admin', 'Store']), createStockTransaction);
 
 router.get('/material-requests', getMaterialRequests);
-router.post('/material-request', createMaterialRequest);
+router.post('/material-request', roleMiddleware(['Admin', 'Dept', 'Store']), createMaterialRequest);
 
 export default router;

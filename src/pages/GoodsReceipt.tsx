@@ -1,207 +1,214 @@
-import React, { useState, useEffect } from 'react';
-import { Package, Check, AlertTriangle } from 'lucide-react';
+import React, { useEffect, useMemo, useState } from 'react';
+import { AlertTriangle, Check, Package } from 'lucide-react';
 import { procurementService } from '../services/procurementService';
 import { inventoryService } from '../services/inventoryService';
 import { PurchaseOrder } from '../types/models';
 import { useAppContext } from '../contexts/AppContext';
 
+interface ReceiptLineDraft {
+    poItemId: string;
+    itemId: string;
+    expectedQty: number;
+    remainingQty: number;
+    acceptedQty: number;
+    rejectedQty: number;
+    rejectionReason: string;
+}
+
 const GoodsReceipt: React.FC = () => {
-    const { currentUser, warehouses, items: masterItems } = useAppContext() as any;
-    const [pos, setPos] = useState<PurchaseOrder[]>([]);
-    const [selectedPOId, setSelectedPOId] = useState<string | null>(null);
-    const [selectedWarehouseId, setSelectedWarehouseId] = useState<string>('');
-    const [receivedItems, setReceivedItems] = useState<{ itemId: string, quantity: number, accepted: number, rejected: number }[]>([]);
+    const { currentUser, warehouses } = useAppContext();
+    const [purchaseOrders, setPurchaseOrders] = useState<PurchaseOrder[]>([]);
+    const [selectedPOId, setSelectedPOId] = useState('');
+    const [selectedWarehouseId, setSelectedWarehouseId] = useState('');
+    const [receiptLines, setReceiptLines] = useState<ReceiptLineDraft[]>([]);
     const [isLoading, setIsLoading] = useState(true);
 
     useEffect(() => {
-        fetchPOs();
-        if (warehouses.length > 0) {
+        void fetchPOs();
+    }, []);
+
+    useEffect(() => {
+        if (!selectedWarehouseId && warehouses.length > 0) {
             setSelectedWarehouseId(warehouses[0].id);
         }
-    }, [warehouses]);
+    }, [selectedWarehouseId, warehouses]);
 
-    const fetchPOs = async () => {
+    async function fetchPOs() {
         try {
             setIsLoading(true);
-            const fetchedPOs = await procurementService.getPOs();
-            // Filter POs that are "Sent" or "Partially Received" or "Open"
-            setPos(fetchedPOs.filter(po => (po.status as any) === 'Sent' || (po.status as any) === 'Partially Received' || (po.status as any) === 'Open'));
+            const data = await procurementService.getPOs();
+            setPurchaseOrders(data.filter((po) => ['Issued', 'Partially Received'].includes(po.status)));
         } catch (error) {
             console.error('Error fetching POs:', error);
         } finally {
             setIsLoading(false);
         }
-    };
+    }
 
-    // Filter POs that are "Sent" or "Partially Received" or "Open"
-    const openPOs = pos.filter(po => (po.status as any) === 'Sent' || (po.status as any) === 'Partially Received' || (po.status as any) === 'Open');
-    const selectedPO = pos.find(p => p.id === selectedPOId);
+    const selectedPO = useMemo(() => purchaseOrders.find((po) => po.id === selectedPOId), [purchaseOrders, selectedPOId]);
 
-    const handleSelectPO = (po: PurchaseOrder) => {
+    function selectPO(po: PurchaseOrder) {
         setSelectedPOId(po.id);
-        // Initialize receive buffer
-        setReceivedItems(po.items.map((i: any) => ({
-            itemId: i.itemId,
-            quantity: i.quantity || i.qty, // Expected
-            accepted: i.quantity || i.qty, // Default all accepted
-            rejected: 0
-        })));
-    };
+        setReceiptLines((po.poItems || []).map((line) => {
+            const remaining = Number(line.orderedQty) - Number(line.receivedQty) - Number(line.cancelledQty);
+            return {
+                poItemId: line.id,
+                itemId: line.itemId,
+                expectedQty: Number(line.orderedQty),
+                remainingQty: remaining,
+                acceptedQty: remaining > 0 ? remaining : 0,
+                rejectedQty: 0,
+                rejectionReason: '',
+            };
+        }).filter((line) => line.remainingQty > 0));
+    }
 
-    const handleReceive = async () => {
-        if (!selectedPOId || !selectedWarehouseId) return;
+    function updateLine(index: number, patch: Partial<ReceiptLineDraft>) {
+        setReceiptLines((current) => current.map((line, currentIndex) => currentIndex === index ? { ...line, ...patch } : line));
+    }
+
+    async function handlePostGRN() {
+        if (!selectedPO || !selectedWarehouseId) {
+            alert('Select PO and warehouse');
+            return;
+        }
+
+        const payloadLines = receiptLines
+            .filter((line) => line.acceptedQty + line.rejectedQty > 0)
+            .map((line) => ({
+                poItemId: line.poItemId,
+                itemId: line.itemId,
+                receivedQty: line.acceptedQty + line.rejectedQty,
+                acceptedQty: line.acceptedQty,
+                rejectedQty: line.rejectedQty,
+                rejectionReason: line.rejectedQty > 0 ? line.rejectionReason : undefined,
+                disposition: line.rejectedQty > 0 ? 'Rejected' : 'Accepted',
+            }));
+
+        if (payloadLines.length === 0) {
+            alert('Enter at least one accepted or rejected quantity');
+            return;
+        }
+
         try {
             setIsLoading(true);
             await inventoryService.createGRN({
-                poId: selectedPOId,
+                poId: selectedPO.id,
                 warehouseId: selectedWarehouseId,
                 receivedDate: new Date().toISOString(),
-                receivedBy: currentUser?.id || 'admin',
-                items: receivedItems.map(ri => ({
-                    itemId: ri.itemId,
-                    receivedQty: ri.accepted + ri.rejected,
-                    acceptedQty: ri.accepted,
-                    rejectedQty: ri.rejected
-                }))
+                items: payloadLines,
+                idempotencyKey: `ui-grn-${selectedPO.id}-${Date.now()}`,
             });
+            setSelectedPOId('');
+            setReceiptLines([]);
             await fetchPOs();
-            alert(`Goods Received for PO ${selectedPO?.poNo}. Inventory Updated.`);
-            setSelectedPOId(null);
-        } catch (error) {
-            console.error('Error creating GRN:', error);
+        } catch (error: any) {
+            console.error(error);
+            alert(error?.response?.data?.message || 'Unable to post GRN');
         } finally {
             setIsLoading(false);
         }
-    };
+    }
 
     return (
         <div className="flex flex-col h-full">
             <div className="text-xs text-vscode-text-muted px-4 pt-3 pb-2 flex items-center gap-2">
                 <span>Inventory</span>
                 <span>/</span>
-                <span className="text-vscode-text">Goods Receipt (GRN)</span>
+                <span className="text-vscode-text">Goods Receipt</span>
             </div>
 
             <div className="flex-1 overflow-hidden flex">
-                {/* Pending POs */}
-                <div className="w-72 border-r border-vscode-border bg-vscode-sidebar flex flex-col">
-                    <div className="p-3 border-b border-vscode-border font-semibold text-xs uppercase text-vscode-text-muted">
-                        Pending POs
-                    </div>
+                <div className="w-80 border-r border-vscode-border bg-vscode-sidebar flex flex-col">
+                    <div className="p-3 border-b border-vscode-border font-semibold text-xs uppercase text-vscode-text-muted">Issued Purchase Orders</div>
                     <div className="flex-1 overflow-auto">
-                        {openPOs.length === 0 ? (
-                            <div className="p-4 text-xs text-vscode-text-muted">No pending Purchase Orders.</div>
-                        ) : (
-                            openPOs.map(po => (
-                                <div
-                                    key={po.id}
-                                    className={`p-3 border-b border-vscode-border cursor-pointer hover:bg-vscode-hover ${selectedPOId === po.id ? 'bg-vscode-active border-l-2 border-l-vscode-accent' : ''}`}
-                                    onClick={() => handleSelectPO(po)}
-                                >
-                                    <div className="font-semibold text-sm mb-1">{po.poNo}</div>
-                                    <div className="text-xs text-vscode-text-muted">{po.vendorId}</div>
-                                    <div className="text-xs text-vscode-text-muted mt-1">Due: {po.deliveryDate}</div>
-                                </div>
-                            ))
-                        )}
+                        {purchaseOrders.map((po) => (
+                            <button key={po.id} className={`w-full text-left p-3 border-b border-vscode-border hover:bg-vscode-hover ${selectedPOId === po.id ? 'bg-vscode-active border-l-2 border-l-vscode-accent' : ''}`} onClick={() => selectPO(po)}>
+                                <div className="font-semibold text-sm">{po.poNo}</div>
+                                <div className="text-xs text-vscode-text-muted mt-1">{po.vendor?.name || po.vendorId}</div>
+                                <div className="text-xs text-vscode-text-muted">Status: {po.status}</div>
+                            </button>
+                        ))}
+                        {!isLoading && purchaseOrders.length === 0 && <div className="p-4 text-xs text-vscode-text-muted">No issued POs waiting for receipt.</div>}
                     </div>
                 </div>
 
-                {/* GRN Entry */}
                 <div className="flex-1 overflow-auto p-4 relative">
-                    {isLoading && (
-                        <div className="absolute inset-0 bg-vscode-bg/50 backdrop-blur-sm z-50 flex items-center justify-center">
-                            <div className="text-vscode-text-muted">Loading...</div>
-                        </div>
-                    )}
+                    {isLoading && <div className="absolute inset-0 bg-vscode-bg/50 backdrop-blur-sm z-10 flex items-center justify-center text-vscode-text-muted">Loading receipt workspace...</div>}
                     {selectedPO ? (
-                        <div>
-                            <div className="flex items-center justify-between mb-4">
-                                <h2 className="text-lg font-semibold">Receive Goods - {selectedPO.poNo}</h2>
+                        <div className="space-y-4">
+                            <div className="flex items-center justify-between">
+                                <div>
+                                    <h2 className="text-lg font-semibold">Post GRN for {selectedPO.poNo}</h2>
+                                    <p className="text-xs text-vscode-text-muted">Only accepted quantity will increase stock. Rejected quantity remains outside inventory.</p>
+                                </div>
                                 <div className="flex items-center gap-3">
-                                    <label className="text-xs text-vscode-text-muted">Warehouse:</label>
-                                    <select
-                                        className="input-vscode py-1 text-xs"
-                                        value={selectedWarehouseId}
-                                        onChange={(e) => setSelectedWarehouseId(e.target.value)}
-                                    >
-                                        {warehouses.map((wh: any) => (
-                                            <option key={wh.id} value={wh.id}>{wh.name}</option>
+                                    <span className="text-xs text-vscode-text-muted">Storekeeper: {currentUser?.name}</span>
+                                    <select className="input-vscode py-1 text-xs" value={selectedWarehouseId} onChange={(e) => setSelectedWarehouseId(e.target.value)}>
+                                        {warehouses.map((warehouse) => (
+                                            <option key={warehouse.id} value={warehouse.id}>{warehouse.name}</option>
                                         ))}
                                     </select>
                                 </div>
                             </div>
 
-                            <div className="bg-vscode-sidebar border border-vscode-border p-4 mb-4">
+                            <div className="bg-vscode-sidebar border border-vscode-border rounded-lg overflow-auto">
                                 <table className="table-vscode">
                                     <thead>
                                         <tr>
                                             <th>Item</th>
-                                            <th>Expected Qty</th>
-                                            <th className="w-24">Accepted</th>
-                                            <th className="w-24">Rejected</th>
+                                            <th>Ordered</th>
+                                            <th>Remaining</th>
+                                            <th>Accepted</th>
+                                            <th>Rejected</th>
+                                            <th>Reason</th>
                                             <th>Status</th>
                                         </tr>
                                     </thead>
                                     <tbody>
-                                        {receivedItems.map((item: any, idx) => (
-                                            <tr key={item.itemId}>
-                                                <td>{masterItems.find((m: any) => m.id === item.itemId)?.name || item.itemId}</td>
-                                                <td>{item.quantity}</td>
-                                                <td>
-                                                    <input
-                                                        type="number"
-                                                        className="input-vscode w-full"
-                                                        value={item.accepted}
-                                                        onChange={(e) => {
-                                                            const val = parseInt(e.target.value) || 0;
-                                                            const newItems = [...receivedItems];
-                                                            newItems[idx].accepted = val;
-                                                            setReceivedItems(newItems);
-                                                        }}
-                                                    />
-                                                </td>
-                                                <td>
-                                                    <input
-                                                        type="number"
-                                                        className="input-vscode w-full"
-                                                        value={item.rejected}
-                                                        onChange={(e) => {
-                                                            const val = parseInt(e.target.value) || 0;
-                                                            const newItems = [...receivedItems];
-                                                            newItems[idx].rejected = val;
-                                                            setReceivedItems(newItems);
-                                                        }}
-                                                    />
-                                                </td>
-                                                <td>
-                                                    {item.rejected > 0 ? (
-                                                        <span className="flex items-center gap-1 text-status-error text-xs"><AlertTriangle size={12} /> Issue</span>
-                                                    ) : (
-                                                        <span className="flex items-center gap-1 text-status-success text-xs"><Check size={12} /> OK</span>
-                                                    )}
-                                                </td>
-                                            </tr>
-                                        ))}
+                                        {receiptLines.map((line, index) => {
+                                            const item = selectedPO.poItems.find((poLine) => poLine.id === line.poItemId)?.item;
+                                            const totalReceipt = line.acceptedQty + line.rejectedQty;
+                                            const overRemaining = totalReceipt > line.remainingQty;
+                                            return (
+                                                <tr key={line.poItemId}>
+                                                    <td>{item?.code || line.itemId} - {item?.name || 'Item'}</td>
+                                                    <td>{line.expectedQty}</td>
+                                                    <td>{line.remainingQty}</td>
+                                                    <td>
+                                                        <input type="number" min="0" className="input-vscode w-full" value={line.acceptedQty} onChange={(e) => updateLine(index, { acceptedQty: Number(e.target.value) || 0 })} />
+                                                    </td>
+                                                    <td>
+                                                        <input type="number" min="0" className="input-vscode w-full" value={line.rejectedQty} onChange={(e) => updateLine(index, { rejectedQty: Number(e.target.value) || 0 })} />
+                                                    </td>
+                                                    <td>
+                                                        <input className="input-vscode w-full" placeholder="Required if rejected" value={line.rejectionReason} onChange={(e) => updateLine(index, { rejectionReason: e.target.value })} />
+                                                    </td>
+                                                    <td>
+                                                        {overRemaining ? (
+                                                            <span className="flex items-center gap-1 text-status-error text-xs"><AlertTriangle size={12} /> Over receipt</span>
+                                                        ) : line.rejectedQty > 0 ? (
+                                                            <span className="flex items-center gap-1 text-status-warning text-xs"><AlertTriangle size={12} /> Partial reject</span>
+                                                        ) : (
+                                                            <span className="flex items-center gap-1 text-status-success text-xs"><Check size={12} /> Valid</span>
+                                                        )}
+                                                    </td>
+                                                </tr>
+                                            );
+                                        })}
                                     </tbody>
                                 </table>
                             </div>
 
-                            <div className="flex justify-end gap-3">
-                                <button className="btn-secondary">Save Draft</button>
-                                <button
-                                    className="btn-primary flex items-center gap-2"
-                                    onClick={handleReceive}
-                                >
+                            <div className="flex justify-end">
+                                <button className="btn-primary flex items-center gap-2" onClick={() => void handlePostGRN()}>
                                     <Package size={14} />
-                                    <span>Complete GRN & Update Stock</span>
+                                    <span>Post GRN</span>
                                 </button>
                             </div>
                         </div>
                     ) : (
-                        <div className="flex items-center justify-center h-full text-vscode-text-muted">
-                            Select a PO to receive goods
-                        </div>
+                        <div className="h-full flex items-center justify-center text-vscode-text-muted">Select an issued PO to post goods receipt.</div>
                     )}
                 </div>
             </div>

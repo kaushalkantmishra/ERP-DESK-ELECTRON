@@ -5,7 +5,7 @@ import {
     getQuotes, submitQuote, updateQuoteStatus,
     getPOs, createPO, updatePOStatus
 } from '../controllers/procurementController.js';
-import { authMiddleware } from '../middleware/auth.js';
+import { authMiddleware, roleMiddleware } from '../middleware/auth.js';
 
 const router = Router();
 
@@ -13,18 +13,18 @@ router.use(authMiddleware);
 
 router.get('/prs', getPRs);
 router.get('/prs/:id', getPR);
-router.post('/prs', createPR);
-router.patch('/prs/:id/status', updatePRStatus);
+router.post('/prs', roleMiddleware(['Admin', 'Dept', 'Procurement']), createPR);
+router.patch('/prs/:id/status', roleMiddleware(['Admin', 'Procurement']), updatePRStatus);
 
 router.get('/rfqs', getRFQs);
-router.post('/rfqs', createRFQ);
+router.post('/rfqs', roleMiddleware(['Admin', 'Procurement']), createRFQ);
 
 router.get('/quotes', getQuotes);
-router.post('/quotes', submitQuote);
-router.patch('/quotes/:id/status', updateQuoteStatus);
+router.post('/quotes', roleMiddleware(['Admin', 'Procurement']), submitQuote);
+router.patch('/quotes/:id/status', roleMiddleware(['Admin', 'Procurement']), updateQuoteStatus);
 
 router.get('/pos', getPOs);
-router.post('/pos', createPO);
-router.patch('/pos/:id/status', updatePOStatus);
+router.post('/pos', roleMiddleware(['Admin', 'Procurement']), createPO);
+router.patch('/pos/:id/status', roleMiddleware(['Admin', 'Procurement']), updatePOStatus);
 
 export default router;

@@ -1,126 +1,143 @@
-import React, { useState, useEffect } from 'react';
-import { Save, Send, X, Plus, Trash2, Upload, File, CheckCircle, XCircle } from 'lucide-react';
-import { useParams, useNavigate } from 'react-router-dom';
-
-import { procurementService } from '../services/procurementService';
+import React, { useEffect, useMemo, useState } from 'react';
+import { CheckCircle, Plus, Save, Send, Trash2, X, XCircle } from 'lucide-react';
+import { useNavigate, useParams } from 'react-router-dom';
 import { useAppContext } from '../contexts/AppContext';
-import { Priority, PRStatus } from '../types/models';
+import { Priority, PRItem, PRStatus, PurchaseRequisition } from '../types/models';
+import { procurementService } from '../services/procurementService';
+
+interface DraftLine {
+    id: number;
+    itemId: string;
+    quantity: number;
+    requiredDate: string;
+}
+
+const emptyLine = (id: number): DraftLine => ({ id, itemId: '', quantity: 1, requiredDate: '' });
 
 const PurchaseRequisitionForm: React.FC = () => {
     const { id } = useParams();
     const navigate = useNavigate();
-    const { currentUser, items: masterItems, uoms } = useAppContext();
-    const [activeTab, setActiveTab] = useState<'details' | 'items' | 'attachments'>('details');
-    const [isSubmitting, setIsSubmitting] = useState(false);
+    const { currentUser, items: masterItems } = useAppContext();
+    const [record, setRecord] = useState<PurchaseRequisition | null>(null);
     const [isLoading, setIsLoading] = useState(false);
-
-    // Form State
-    const [prNo, setPrNo] = useState('');
-    const [status, setStatus] = useState<PRStatus>('Draft');
+    const [isSubmitting, setIsSubmitting] = useState(false);
     const [department, setDepartment] = useState(currentUser?.department || '');
-    const [reqDate, setReqDate] = useState('');
     const [priority, setPriority] = useState<Priority>('Medium');
     const [justification, setJustification] = useState('');
-
-    const [items, setItems] = useState([
-        { id: 1, itemId: '', uom: '', qty: 1, estimatedPrice: 0, remarks: '' }
-    ]);
-    const [attachments, setAttachments] = useState<{ id: number; name: string; size: string }[]>([]);
+    const [lines, setLines] = useState<DraftLine[]>([emptyLine(1)]);
+    const [requiredDate, setRequiredDate] = useState(new Date().toISOString().split('T')[0]);
 
     useEffect(() => {
-        if (id) {
-            fetchPR(id);
-        }
+        if (!id) return;
+        void loadPR(id);
     }, [id]);
 
-    const fetchPR = async (prId: string) => {
+    const isReadOnly = !!record && !['Draft', 'Rejected'].includes(record.status);
+    const canApprove = record?.status === 'Submitted';
+    const canResubmit = record?.status === 'Rejected';
+
+    const lineCount = useMemo(() => lines.filter((line) => line.itemId).length, [lines]);
+
+    async function loadPR(prId: string) {
         try {
             setIsLoading(true);
             const pr = await procurementService.getPR(prId);
-            if (pr) {
-                setPrNo(pr.prNo);
-                setStatus(pr.status);
-                setDepartment(pr.department);
-                setReqDate(pr.items[0]?.requiredDate?.split('T')[0] || '');
-                setPriority(pr.priority);
-                setJustification(pr.justification);
-                setItems(pr.items.map((i, index) => ({
-                    id: index + 1,
-                    itemId: i.itemId,
-                    uom: (i as any).item?.uom || '',
-                    qty: i.quantity,
-                    estimatedPrice: (i as any).item?.price || 0,
-                    remarks: ''
-                })));
-            }
+            setRecord(pr);
+            setDepartment(pr.department);
+            setPriority(pr.priority);
+            setJustification(pr.justification || '');
+            const incoming = (pr.prItems || []).map((line, index) => ({
+                id: index + 1,
+                itemId: line.itemId,
+                quantity: Number(line.quantity),
+                requiredDate: line.requiredDate ? line.requiredDate.split('T')[0] : '',
+            }));
+            setLines(incoming.length > 0 ? incoming : [emptyLine(1)]);
+            setRequiredDate(incoming[0]?.requiredDate || new Date().toISOString().split('T')[0]);
         } catch (error) {
             console.error('Error fetching PR:', error);
         } finally {
             setIsLoading(false);
         }
-    };
+    }
 
-    const handleSubmit = async () => {
-        if (!currentUser) return;
-        setIsSubmitting(true);
-        try {
-            if (!id) {
-                await procurementService.createPR({
-                    requestorId: currentUser.id,
-                    department,
-                    date: new Date().toISOString(),
-                    priority,
-                    status: 'Submitted',
-                    justification,
-                    items: items.filter(i => i.itemId).map(i => ({
-                        itemId: i.itemId,
-                        quantity: i.qty,
-                        requiredDate: reqDate
-                    }))
-                });
-                navigate('/procurement/purchase-requisition');
-            }
-        } catch (error) {
-            console.error('Error submitting PR:', error);
-        } finally {
-            setIsSubmitting(false);
-        }
-    };
+    function updateLine(lineId: number, patch: Partial<DraftLine>) {
+        setLines((current) => current.map((line) => line.id === lineId ? { ...line, ...patch } : line));
+    }
 
-    const handleStatusChange = async (newStatus: PRStatus) => {
-        if (!id) return;
-        setIsSubmitting(true);
-        try {
-            await procurementService.updatePRStatus(id, newStatus);
-            setStatus(newStatus);
-            navigate('/procurement/purchase-requisition');
-        } catch (error) {
-            console.error('Error updating status:', error);
-        } finally {
-            setIsSubmitting(false);
-        }
-    };
+    function addLine() {
+        setLines((current) => [...current, emptyLine(Date.now())]);
+    }
 
-    const addItem = () => {
-        setItems([...items, { id: items.length + 1, itemId: '', uom: '', qty: 1, estimatedPrice: 0, remarks: '' }]);
-    };
+    function removeLine(lineId: number) {
+        setLines((current) => current.length === 1 ? current : current.filter((line) => line.id !== lineId));
+    }
 
-    const removeItem = (id: number) => {
-        setItems(items.filter(item => item.id !== id));
-    };
-
-    const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-        if (e.target.files) {
-            const newFiles = Array.from(e.target.files).map((file, index) => ({
-                id: attachments.length + index + 1,
-                name: file.name,
-                size: `${(file.size / 1024).toFixed(2)} KB`
+    function buildPayload(status: PRStatus) {
+        const preparedLines: PRItem[] = lines
+            .filter((line) => line.itemId && line.quantity > 0)
+            .map((line) => ({
+                itemId: line.itemId,
+                quantity: Number(line.quantity),
+                requiredDate: line.requiredDate || requiredDate,
             }));
-            setAttachments([...attachments, ...newFiles]);
-        }
-    };
 
-    const isReadOnly = !!id && status !== 'Draft';
+        if (preparedLines.length === 0) {
+            throw new Error('Add at least one valid item line');
+        }
+        if (!department.trim()) {
+            throw new Error('Department is required');
+        }
+        if (!justification.trim()) {
+            throw new Error('Justification is required');
+        }
+
+        return {
+            requestorId: currentUser?.id,
+            department,
+            date: new Date().toISOString(),
+            priority,
+            status,
+            justification,
+            items: preparedLines,
+        };
+    }
+
+    async function save(status: PRStatus) {
+        try {
+            setIsSubmitting(true);
+            if (!currentUser) return;
+            await procurementService.createPR(buildPayload(status));
+            navigate('/procurement/purchase-requisition');
+        } catch (error: any) {
+            console.error(error);
+            alert(error?.message || 'Unable to save purchase request');
+        } finally {
+            setIsSubmitting(false);
+        }
+    }
+
+    async function handleStatusChange(nextStatus: PRStatus) {
+        if (!record) return;
+        try {
+            setIsSubmitting(true);
+            let rejectionReason: string | undefined;
+            if (nextStatus === 'Rejected') {
+                rejectionReason = window.prompt('Enter rejection reason') || undefined;
+                if (!rejectionReason) {
+                    setIsSubmitting(false);
+                    return;
+                }
+            }
+            await procurementService.updatePRStatus(record.id, nextStatus, rejectionReason);
+            navigate('/procurement/purchase-requisition');
+        } catch (error: any) {
+            console.error(error);
+            alert(error?.message || 'Unable to update requisition');
+        } finally {
+            setIsSubmitting(false);
+        }
+    }
 
     return (
         <div className="flex flex-col h-full">
@@ -129,309 +146,143 @@ const PurchaseRequisitionForm: React.FC = () => {
                 <span>/</span>
                 <span>Purchase Requisition</span>
                 <span>/</span>
-                <span className="text-vscode-text">{id ? prNo : 'New'}</span>
+                <span className="text-vscode-text">{record?.prNo || 'New'}</span>
             </div>
 
             <div className="px-4 pb-3 flex items-center gap-3 border-b border-vscode-border">
-                {id && status === 'Submitted' && (
+                {!id && (
                     <>
-                        <button
-                            className="bg-green-600 hover:bg-green-700 text-white px-3 py-1.5 rounded flex items-center gap-2 text-sm"
-                            onClick={() => handleStatusChange('Approved')}
-                            disabled={isSubmitting}
-                        >
+                        <button className="btn-secondary flex items-center gap-2" disabled={isSubmitting} onClick={() => void save('Draft')}>
+                            <Save size={14} />
+                            <span>{isSubmitting ? 'Saving...' : 'Save Draft'}</span>
+                        </button>
+                        <button className="btn-primary flex items-center gap-2" disabled={isSubmitting} onClick={() => void save('Submitted')}>
+                            <Send size={14} />
+                            <span>{isSubmitting ? 'Submitting...' : 'Submit For Approval'}</span>
+                        </button>
+                    </>
+                )}
+                {canResubmit && (
+                    <button className="btn-primary flex items-center gap-2" disabled={isSubmitting} onClick={() => void handleStatusChange('Submitted')}>
+                        <Send size={14} />
+                        <span>Resubmit</span>
+                    </button>
+                )}
+                {canApprove && (
+                    <>
+                        <button className="bg-green-600 hover:bg-green-700 text-white px-3 py-1.5 rounded flex items-center gap-2 text-sm" disabled={isSubmitting} onClick={() => void handleStatusChange('Approved')}>
                             <CheckCircle size={14} />
                             <span>Approve</span>
                         </button>
-                        <button
-                            className="bg-red-600 hover:bg-red-700 text-white px-3 py-1.5 rounded flex items-center gap-2 text-sm"
-                            onClick={() => handleStatusChange('Rejected')}
-                            disabled={isSubmitting}
-                        >
+                        <button className="bg-red-600 hover:bg-red-700 text-white px-3 py-1.5 rounded flex items-center gap-2 text-sm" disabled={isSubmitting} onClick={() => void handleStatusChange('Rejected')}>
                             <XCircle size={14} />
                             <span>Reject</span>
                         </button>
-                        <div className="w-px h-6 bg-vscode-border mx-2"></div>
                     </>
                 )}
-
-                {!isReadOnly && (
-                    <>
-                        <button className="btn-primary flex items-center gap-2">
-                            <Save size={14} />
-                            <span>Save Draft</span>
-                        </button>
-                        <button className="btn-primary flex items-center gap-2" onClick={handleSubmit} disabled={isSubmitting}>
-                            <Send size={14} />
-                            <span>{isSubmitting ? 'Submitting...' : 'Submit'}</span>
-                        </button>
-                    </>
-                )}
-
                 <button className="btn-secondary flex items-center gap-2 ml-auto" onClick={() => navigate('/procurement/purchase-requisition')}>
                     <X size={14} />
                     <span>Close</span>
                 </button>
             </div>
 
-            <div className="flex border-b border-vscode-border bg-vscode-sidebar">
-                <button
-                    className={`px-4 py-2 text-sm border-r border-vscode-border ${activeTab === 'details' ? 'bg-vscode-bg text-vscode-text' : 'text-vscode-text-muted hover:bg-vscode-hover'
-                        }`}
-                    onClick={() => setActiveTab('details')}
-                >
-                    Details
-                </button>
-                <button
-                    className={`px-4 py-2 text-sm border-r border-vscode-border ${activeTab === 'items' ? 'bg-vscode-bg text-vscode-text' : 'text-vscode-text-muted hover:bg-vscode-hover'
-                        }`}
-                    onClick={() => setActiveTab('items')}
-                >
-                    Items
-                </button>
-                <button
-                    className={`px-4 py-2 text-sm ${activeTab === 'attachments' ? 'bg-vscode-bg text-vscode-text' : 'text-vscode-text-muted hover:bg-vscode-hover'
-                        }`}
-                    onClick={() => setActiveTab('attachments')}
-                >
-                    Attachments
-                </button>
-            </div>
+            <div className="flex-1 overflow-auto p-4 space-y-4 relative">
+                {isLoading && <div className="absolute inset-0 bg-vscode-bg/50 backdrop-blur-sm z-10 flex items-center justify-center text-vscode-text-muted">Loading requisition...</div>}
 
-            <div className="flex-1 overflow-auto p-4 relative">
-                {isLoading && (
-                    <div className="absolute inset-0 bg-vscode-bg/50 backdrop-blur-sm z-50 flex items-center justify-center">
-                        <div className="text-vscode-text-muted">Loading...</div>
-                    </div>
-                )}
-                {activeTab === 'details' && (
-                    <div className="w-full p-6 bg-vscode-sidebar rounded-xl border border-vscode-border shadow-sm">
-                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-                            <div className="form-group">
-                                <label className="form-label">Department *</label>
-                                <select
-                                    className="form-select"
-                                    value={department}
-                                    onChange={(e) => setDepartment(e.target.value)}
-                                    disabled={isReadOnly}
-                                >
-                                    <option value="">Select Department</option>
-                                    <option value="IT">IT</option>
-                                    <option value="HR">HR</option>
-                                    <option value="Finance">Finance</option>
-                                    <option value="Operations">Operations</option>
-                                    <option value="Marketing">Marketing</option>
-                                    <option value="Warehouse">Warehouse</option>
-                                </select>
-                            </div>
-
-                            <div className="form-group">
-                                <label className="form-label">Requested By</label>
-                                <input type="text" className="input-vscode w-full" value={currentUser?.name || ''} disabled />
-                            </div>
-
-                            <div className="form-group">
-                                <label className="form-label">Required Date *</label>
-                                <input
-                                    type="date"
-                                    className="input-vscode w-full"
-                                    value={reqDate}
-                                    onChange={(e) => setReqDate(e.target.value)}
-                                    disabled={isReadOnly}
-                                />
-                            </div>
-
-                            <div className="form-group">
-                                <label className="form-label">Priority *</label>
-                                <select
-                                    className="form-select"
-                                    value={priority}
-                                    onChange={(e) => setPriority(e.target.value as Priority)}
-                                    disabled={isReadOnly}
-                                >
-                                    <option value="Low">Low</option>
-                                    <option value="Medium">Medium</option>
-                                    <option value="High">High</option>
-                                    <option value="Urgent">Urgent</option>
-                                </select>
-                            </div>
-
-                            <div className="form-group col-span-2">
-                                <label className="form-label">Justification *</label>
-                                <textarea
-                                    className="form-textarea"
-                                    rows={4}
-                                    placeholder="Provide justification..."
-                                    value={justification}
-                                    onChange={(e) => setJustification(e.target.value)}
-                                    disabled={isReadOnly}
-                                />
-                            </div>
+                <section className="bg-vscode-sidebar border border-vscode-border rounded-lg p-5">
+                    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+                        <div>
+                            <label className="form-label">Department</label>
+                            <input className="input-vscode w-full" value={department} onChange={(e) => setDepartment(e.target.value)} disabled={isReadOnly} />
+                        </div>
+                        <div>
+                            <label className="form-label">Requested By</label>
+                            <input className="input-vscode w-full" value={record?.requestor?.name || currentUser?.name || ''} disabled />
+                        </div>
+                        <div>
+                            <label className="form-label">Priority</label>
+                            <select className="input-vscode w-full" value={priority} onChange={(e) => setPriority(e.target.value as Priority)} disabled={isReadOnly}>
+                                <option value="Low">Low</option>
+                                <option value="Medium">Medium</option>
+                                <option value="High">High</option>
+                                <option value="Urgent">Urgent</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label className="form-label">Overall Required Date</label>
+                            <input type="date" className="input-vscode w-full" value={requiredDate} onChange={(e) => setRequiredDate(e.target.value)} disabled={isReadOnly} />
                         </div>
                     </div>
-                )}
+                    <div className="mt-4">
+                        <label className="form-label">Business Justification</label>
+                        <textarea className="form-textarea w-full" rows={4} value={justification} onChange={(e) => setJustification(e.target.value)} disabled={isReadOnly} />
+                    </div>
+                    {record?.rejectionReason && (
+                        <div className="mt-4 p-3 rounded border border-red-500/40 bg-red-950/20 text-sm text-red-300">
+                            Rejection reason: {record.rejectionReason}
+                        </div>
+                    )}
+                </section>
 
-                {activeTab === 'items' && (
-                    <div>
+                <section className="bg-vscode-sidebar border border-vscode-border rounded-lg p-5">
+                    <div className="flex items-center justify-between mb-4">
+                        <div>
+                            <h2 className="font-semibold">Requested Items</h2>
+                            <p className="text-xs text-vscode-text-muted">Add only items that are truly needed. Duplicate and empty lines are ignored.</p>
+                        </div>
                         {!isReadOnly && (
-                            <div className="mb-3 flex items-center justify-between">
-                                <h3 className="text-sm font-semibold">Requisition Items</h3>
-                                <button className="btn-primary flex items-center gap-2" onClick={addItem}>
-                                    <Plus size={14} />
-                                    <span>Add Item</span>
-                                </button>
-                            </div>
+                            <button className="btn-primary flex items-center gap-2" onClick={addLine}>
+                                <Plus size={14} />
+                                <span>Add Line</span>
+                            </button>
                         )}
-
-                        <div className="overflow-auto">
-                            <table className="table-vscode">
-                                <thead>
-                                    <tr>
-                                        <th style={{ width: '30%' }}>Item *</th>
-                                        <th style={{ width: '15%' }}>UOM</th>
-                                        <th style={{ width: '10%' }}>Qty *</th>
-                                        <th style={{ width: '15%' }}>Est. Price</th>
-                                        <th style={{ width: '25%' }}>Remarks</th>
-                                        <th style={{ width: '5%' }}></th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {items.map((row) => (
-                                        <tr key={row.id}>
+                    </div>
+                    <div className="overflow-auto">
+                        <table className="table-vscode">
+                            <thead>
+                                <tr>
+                                    <th>Item</th>
+                                    <th>UOM</th>
+                                    <th>Quantity</th>
+                                    <th>Required Date</th>
+                                    <th></th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {lines.map((line) => {
+                                    const item = masterItems.find((entry) => entry.id === line.itemId);
+                                    return (
+                                        <tr key={line.id}>
                                             <td>
-                                                <select
-                                                    className="input-vscode w-full"
-                                                    value={row.itemId}
-                                                    disabled={isReadOnly}
-                                                    onChange={(e) => {
-                                                        const selectedItem = masterItems.find(i => i.id === e.target.value);
-                                                        const newItems = [...items];
-                                                        const index = items.indexOf(row);
-                                                        newItems[index].itemId = e.target.value;
-                                                        if (selectedItem) {
-                                                            newItems[index].uom = selectedItem.uom;
-                                                            newItems[index].estimatedPrice = selectedItem.price;
-                                                        }
-                                                        setItems(newItems);
-                                                    }}
-                                                >
-                                                    <option value="">Select Item</option>
-                                                    {masterItems.map(item => (
-                                                        <option key={item.id} value={item.id}>
-                                                            {item.name} ({item.code})
-                                                        </option>
+                                                <select className="input-vscode w-full" value={line.itemId} disabled={isReadOnly} onChange={(e) => updateLine(line.id, { itemId: e.target.value })}>
+                                                    <option value="">Select item</option>
+                                                    {masterItems.map((entry) => (
+                                                        <option key={entry.id} value={entry.id}>{entry.code} - {entry.name}</option>
                                                     ))}
                                                 </select>
                                             </td>
+                                            <td>{item?.uom || '-'}</td>
                                             <td>
-                                                <select
-                                                    className="input-vscode w-full"
-                                                    value={row.uom}
-                                                    disabled={isReadOnly}
-                                                    onChange={(e) => {
-                                                        const newItems = [...items];
-                                                        newItems[items.indexOf(row)].uom = e.target.value;
-                                                        setItems(newItems);
-                                                    }}
-                                                >
-                                                    <option value="">Select UOM</option>
-                                                    {uoms.map(u => (
-                                                        <option key={u.id} value={u.code}>{u.name} ({u.code})</option>
-                                                    ))}
-                                                </select>
+                                                <input type="number" min="1" className="input-vscode w-full" value={line.quantity} disabled={isReadOnly} onChange={(e) => updateLine(line.id, { quantity: Number(e.target.value) || 0 })} />
                                             </td>
                                             <td>
-                                                <input
-                                                    type="number"
-                                                    className="input-vscode w-full"
-                                                    placeholder="0"
-                                                    min="1"
-                                                    value={row.qty}
-                                                    disabled={isReadOnly}
-                                                    onChange={(e) => {
-                                                        const newItems = [...items];
-                                                        newItems[items.indexOf(row)].qty = parseInt(e.target.value) || 0;
-                                                        setItems(newItems);
-                                                    }}
-                                                />
-                                            </td>
-                                            <td>
-                                                <input
-                                                    type="number"
-                                                    className="input-vscode w-full"
-                                                    placeholder="0.00"
-                                                    value={row.estimatedPrice}
-                                                    disabled={isReadOnly}
-                                                    onChange={(e) => {
-                                                        const newItems = [...items];
-                                                        newItems[items.indexOf(row)].estimatedPrice = parseFloat(e.target.value) || 0;
-                                                        setItems(newItems);
-                                                    }}
-                                                />
-                                            </td>
-                                            <td>
-                                                <input
-                                                    type="text"
-                                                    className="input-vscode w-full"
-                                                    placeholder="Remarks"
-                                                    value={row.remarks}
-                                                    disabled={isReadOnly}
-                                                    onChange={(e) => {
-                                                        const newItems = [...items];
-                                                        newItems[items.indexOf(row)].remarks = e.target.value;
-                                                        setItems(newItems);
-                                                    }}
-                                                />
+                                                <input type="date" className="input-vscode w-full" value={line.requiredDate || requiredDate} disabled={isReadOnly} onChange={(e) => updateLine(line.id, { requiredDate: e.target.value })} />
                                             </td>
                                             <td>
                                                 {!isReadOnly && (
-                                                    <button className="text-status-error hover:bg-vscode-hover p-1" onClick={() => removeItem(row.id)}>
+                                                    <button className="text-status-error hover:bg-vscode-hover p-1 rounded" onClick={() => removeLine(line.id)}>
                                                         <Trash2 size={14} />
                                                     </button>
                                                 )}
                                             </td>
                                         </tr>
-                                    ))}
-                                </tbody>
-                            </table>
-                        </div>
+                                    );
+                                })}
+                            </tbody>
+                        </table>
                     </div>
-                )}
-
-                {activeTab === 'attachments' && (
-                    <div>
-                        <div className="mb-4">
-                            <label className="block mb-2 text-sm">Upload Files</label>
-                            <div className="border-2 border-dashed border-vscode-border bg-vscode-sidebar p-8 text-center hover:border-vscode-accent transition-colors cursor-pointer">
-                                <input type="file" multiple className="hidden" id="file-upload" onChange={handleFileUpload} />
-                                <label htmlFor="file-upload" className="cursor-pointer">
-                                    <Upload size={32} className="mx-auto mb-2 text-vscode-text-muted" />
-                                    <p className="text-sm text-vscode-text-muted">Drag & drop files here or click to browse</p>
-                                </label>
-                            </div>
-                        </div>
-
-                        {attachments.length > 0 && (
-                            <div>
-                                <h3 className="text-sm font-semibold mb-2">Attached Files</h3>
-                                <div className="space-y-2">
-                                    {attachments.map((file) => (
-                                        <div key={file.id} className="flex items-center gap-3 p-2 bg-vscode-sidebar border border-vscode-border hover:bg-vscode-hover">
-                                            <File size={16} className="text-vscode-accent" />
-                                            <div className="flex-1">
-                                                <div className="text-sm">{file.name}</div>
-                                                <div className="text-xs text-vscode-text-muted">{file.size}</div>
-                                            </div>
-                                            <button className="text-status-error hover:bg-vscode-active p-1" onClick={() => setAttachments(attachments.filter(f => f.id !== file.id))}>
-                                                <Trash2 size={14} />
-                                            </button>
-                                        </div>
-                                    ))}
-                                </div>
-                            </div>
-                        )}
-                    </div>
-                )}
+                    <div className="mt-3 text-xs text-vscode-text-muted">{lineCount} valid line(s)</div>
+                </section>
             </div>
         </div>
     );
