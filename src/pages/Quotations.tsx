@@ -98,7 +98,7 @@ const Quotations: React.FC = () => {
                                             <div className="border-t border-vscode-border pt-3">
                                                 <table className="w-full text-xs text-left mb-3">
                                                     <thead>
-                                                        <tr className="text-vscode-text-muted"><th>Item</th><th className="text-right">Qty</th><th className="text-right">Price</th></tr>
+                                                        <tr className="text-vscode-text-muted"><th>Item</th><th className="text-right">Qty</th><th className="text-right">Price</th><th className="text-right">Variance</th></tr>
                                                     </thead>
                                                     <tbody>
                                                         {(quote.quotationItems || []).map((line, index) => (
@@ -106,6 +106,7 @@ const Quotations: React.FC = () => {
                                                                 <td>{masterItems.find((item) => item.id === line.itemId)?.name || line.itemId}</td>
                                                                 <td className="text-right">{line.qty}</td>
                                                                 <td className="text-right">${line.unitPrice}</td>
+                                                                <td className={`text-right ${Math.abs(Number(line.priceVariancePct || 0)) > 5 ? 'text-status-warning font-semibold' : 'text-vscode-text-muted'}`}>{Number(line.priceVariancePct || 0).toFixed(2)}%</td>
                                                             </tr>
                                                         ))}
                                                     </tbody>

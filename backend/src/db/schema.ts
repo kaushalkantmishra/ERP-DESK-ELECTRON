@@ -83,6 +83,23 @@ export const warehouses = pgTable('warehouses', {
     managerId: uuid('manager_id').references(() => users.id),
 });
 
+export const systemSettings = pgTable('system_settings', {
+    key: varchar('key', { length: 100 }).primaryKey(),
+    value: jsonb('value').notNull(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+});
+
+export const documentSequences = pgTable('document_sequences', {
+    id: uuid('id').primaryKey().defaultRandom(),
+    docType: varchar('doc_type', { length: 30 }).notNull(),
+    fiscalYear: integer('fiscal_year').notNull(),
+    prefix: varchar('prefix', { length: 20 }).notNull(),
+    lastNumber: integer('last_number').notNull().default(0),
+    updatedAt: timestamp('updated_at').defaultNow(),
+}, (table) => ({
+    docSequenceUnique: uniqueIndex('document_sequences_doc_type_year_prefix_idx').on(table.docType, table.fiscalYear, table.prefix),
+}));
+
 export const purchaseRequisitions = pgTable('purchase_requisitions', {
     id: uuid('id').primaryKey().defaultRandom(),
     prNo: varchar('pr_no', { length: 50 }).notNull().unique(),
@@ -137,10 +154,15 @@ export const quotations = pgTable('quotations', {
     id: uuid('id').primaryKey().defaultRandom(),
     rfqId: uuid('rfq_id').notNull().references(() => rfqs.id),
     vendorId: uuid('vendor_id').notNull().references(() => vendors.id),
+    currency: varchar('currency', { length: 10 }).notNull().default('AED'),
+    baseAmount: decimal('base_amount', { precision: 14, scale: 2 }).notNull().default('0.00'),
+    taxAmount: decimal('tax_amount', { precision: 14, scale: 2 }).notNull().default('0.00'),
     totalAmount: decimal('total_amount', { precision: 12, scale: 2 }).notNull(),
     deliveryDate: timestamp('delivery_date'),
+    notes: text('notes'),
     submittedDate: timestamp('submitted_date').defaultNow(),
     status: quotationStatusEnum('status').notNull().default('Pending'),
+    versionNo: integer('version_no').notNull().default(1),
 });
 
 export const quotationItems = pgTable('quotation_items', {
@@ -149,6 +171,12 @@ export const quotationItems = pgTable('quotation_items', {
     itemId: uuid('item_id').notNull().references(() => items.id),
     qty: decimal('qty', { precision: 12, scale: 2 }).notNull(),
     unitPrice: decimal('unit_price', { precision: 12, scale: 2 }).notNull(),
+    taxRate: decimal('tax_rate', { precision: 5, scale: 2 }).notNull().default('0.00'),
+    baseAmount: decimal('base_amount', { precision: 14, scale: 2 }).notNull().default('0.00'),
+    taxAmount: decimal('tax_amount', { precision: 14, scale: 2 }).notNull().default('0.00'),
+    totalAmount: decimal('total_amount', { precision: 14, scale: 2 }).notNull().default('0.00'),
+    awardedQty: decimal('awarded_qty', { precision: 12, scale: 2 }).notNull().default('0.00'),
+    priceVariancePct: decimal('price_variance_pct', { precision: 7, scale: 2 }).notNull().default('0.00'),
 }, (table) => ({
     qtyPositive: check('quotation_items_qty_positive_chk', sql`${table.qty} > 0`),
     priceNonNegative: check('quotation_items_price_non_negative_chk', sql`${table.unitPrice} >= 0`),
@@ -161,7 +189,12 @@ export const purchaseOrders = pgTable('purchase_orders', {
     rfqId: uuid('rfq_id').references(() => rfqs.id),
     vendorId: uuid('vendor_id').notNull().references(() => vendors.id),
     date: timestamp('date').defaultNow(),
+    currency: varchar('currency', { length: 10 }).notNull().default('AED'),
+    baseAmount: decimal('base_amount', { precision: 14, scale: 2 }).notNull().default('0.00'),
+    taxAmount: decimal('tax_amount', { precision: 14, scale: 2 }).notNull().default('0.00'),
     totalAmount: decimal('total_amount', { precision: 12, scale: 2 }).notNull(),
+    priceVariancePct: decimal('price_variance_pct', { precision: 7, scale: 2 }).notNull().default('0.00'),
+    varianceAlert: boolean('variance_alert').notNull().default(false),
     status: poStatusEnum('status').notNull().default('Draft'),
     deliveryDate: timestamp('delivery_date'),
     issuedAt: timestamp('issued_at'),
@@ -182,10 +215,16 @@ export const poItems = pgTable('po_items', {
     itemId: uuid('item_id').notNull().references(() => items.id),
     orderedQty: decimal('ordered_qty', { precision: 12, scale: 2 }).notNull(),
     unitPrice: decimal('unit_price', { precision: 12, scale: 2 }).notNull(),
+    taxRate: decimal('tax_rate', { precision: 5, scale: 2 }).notNull().default('0.00'),
+    baseAmount: decimal('base_amount', { precision: 14, scale: 2 }).notNull().default('0.00'),
+    taxAmount: decimal('tax_amount', { precision: 14, scale: 2 }).notNull().default('0.00'),
+    totalAmount: decimal('total_amount', { precision: 14, scale: 2 }).notNull().default('0.00'),
     receivedQty: decimal('received_qty', { precision: 12, scale: 2 }).notNull().default('0.00'),
     acceptedQty: decimal('accepted_qty', { precision: 12, scale: 2 }).notNull().default('0.00'),
     invoicedQty: decimal('invoiced_qty', { precision: 12, scale: 2 }).notNull().default('0.00'),
+    paidQty: decimal('paid_qty', { precision: 12, scale: 2 }).notNull().default('0.00'),
     cancelledQty: decimal('cancelled_qty', { precision: 12, scale: 2 }).notNull().default('0.00'),
+    priceVariancePct: decimal('price_variance_pct', { precision: 7, scale: 2 }).notNull().default('0.00'),
 }, (table) => ({
     orderedQtyPositive: check('po_items_ordered_qty_positive_chk', sql`${table.orderedQty} > 0`),
     unitPriceNonNegative: check('po_items_unit_price_non_negative_chk', sql`${table.unitPrice} >= 0`),
@@ -202,12 +241,17 @@ export const grns = pgTable('grns', {
     receivedDate: timestamp('received_date').defaultNow(),
     receivedBy: uuid('received_by').references(() => users.id),
     warehouseId: uuid('warehouse_id').notNull().references(() => warehouses.id),
+    baseAmount: decimal('base_amount', { precision: 14, scale: 2 }).notNull().default('0.00'),
+    taxAmount: decimal('tax_amount', { precision: 14, scale: 2 }).notNull().default('0.00'),
+    totalAmount: decimal('total_amount', { precision: 14, scale: 2 }).notNull().default('0.00'),
+    warnings: jsonb('warnings'),
     status: grnStatusEnum('status').notNull().default('Draft'),
     postedAt: timestamp('posted_at'),
     postedBy: uuid('posted_by').references(() => users.id),
     reversedAt: timestamp('reversed_at'),
     reversedBy: uuid('reversed_by').references(() => users.id),
     reversalReason: text('reversal_reason'),
+    versionNo: integer('version_no').notNull().default(1),
     deletedAt: timestamp('deleted_at'),
     deletedBy: uuid('deleted_by').references(() => users.id),
 });
@@ -220,6 +264,10 @@ export const grnItems = pgTable('grn_items', {
     receivedQty: decimal('received_qty', { precision: 12, scale: 2 }).notNull(),
     acceptedQty: decimal('accepted_qty', { precision: 12, scale: 2 }).notNull(),
     rejectedQty: decimal('rejected_qty', { precision: 12, scale: 2 }).notNull(),
+    unitCost: decimal('unit_cost', { precision: 12, scale: 2 }).notNull().default('0.00'),
+    baseAmount: decimal('base_amount', { precision: 14, scale: 2 }).notNull().default('0.00'),
+    taxAmount: decimal('tax_amount', { precision: 14, scale: 2 }).notNull().default('0.00'),
+    totalAmount: decimal('total_amount', { precision: 14, scale: 2 }).notNull().default('0.00'),
     rejectionReason: text('rejection_reason'),
     disposition: varchar('disposition', { length: 30 }).default('Accepted'),
 }, (table) => ({
@@ -233,6 +281,8 @@ export const stockLevels = pgTable('stock_levels', {
     itemId: uuid('item_id').notNull().references(() => items.id),
     warehouseId: uuid('warehouse_id').notNull().references(() => warehouses.id),
     quantity: decimal('quantity', { precision: 12, scale: 2 }).notNull().default('0.00'),
+    reservedQty: decimal('reserved_qty', { precision: 12, scale: 2 }).notNull().default('0.00'),
+    avgCost: decimal('avg_cost', { precision: 12, scale: 4 }).notNull().default('0.0000'),
     minStockLevel: decimal('min_stock_level', { precision: 12, scale: 2 }).default('0.00'),
     versionNo: integer('version_no').notNull().default(1),
     updatedAt: timestamp('updated_at').defaultNow(),
@@ -263,6 +313,23 @@ export const stockTransactions = pgTable('stock_transactions', {
     quantityPositive: check('stock_transactions_quantity_positive_chk', sql`${table.quantity} > 0`),
 }));
 
+export const stockReservations = pgTable('stock_reservations', {
+    id: uuid('id').primaryKey().defaultRandom(),
+    itemId: uuid('item_id').notNull().references(() => items.id),
+    warehouseId: uuid('warehouse_id').references(() => warehouses.id),
+    sourceType: varchar('source_type', { length: 50 }).notNull(),
+    sourceId: uuid('source_id').notNull(),
+    sourceLineId: uuid('source_line_id'),
+    quantity: decimal('quantity', { precision: 12, scale: 2 }).notNull(),
+    consumedQty: decimal('consumed_qty', { precision: 12, scale: 2 }).notNull().default('0.00'),
+    releasedQty: decimal('released_qty', { precision: 12, scale: 2 }).notNull().default('0.00'),
+    status: varchar('status', { length: 30 }).notNull().default('Open'),
+    createdAt: timestamp('created_at').defaultNow(),
+    releasedAt: timestamp('released_at'),
+}, (table) => ({
+    reservationQtyPositive: check('stock_reservations_quantity_positive_chk', sql`${table.quantity} > 0`),
+}));
+
 export const materialRequests = pgTable('material_requests', {
     id: uuid('id').primaryKey().defaultRandom(),
     requestNo: varchar('request_no', { length: 50 }).notNull().unique(),
@@ -270,6 +337,7 @@ export const materialRequests = pgTable('material_requests', {
     department: varchar('department', { length: 100 }),
     date: timestamp('date').defaultNow(),
     status: materialRequestStatusEnum('status').notNull(),
+    versionNo: integer('version_no').notNull().default(1),
 });
 
 export const materialRequestItems = pgTable('material_request_items', {
@@ -289,15 +357,20 @@ export const invoices = pgTable('invoices', {
     poId: uuid('po_id').notNull().references(() => purchaseOrders.id),
     date: timestamp('date').defaultNow(),
     dueDate: timestamp('due_date'),
+    currency: varchar('currency', { length: 10 }).notNull().default('AED'),
+    baseAmount: decimal('base_amount', { precision: 14, scale: 2 }).notNull().default('0.00'),
+    taxAmount: decimal('tax_amount', { precision: 14, scale: 2 }).notNull().default('0.00'),
     amount: decimal('amount', { precision: 12, scale: 2 }).notNull(),
     matchedAmount: decimal('matched_amount', { precision: 12, scale: 2 }).notNull().default('0.00'),
     paidAmount: decimal('paid_amount', { precision: 12, scale: 2 }).notNull().default('0.00'),
     balanceAmount: decimal('balance_amount', { precision: 12, scale: 2 }).notNull().default('0.00'),
+    matchWarnings: jsonb('match_warnings'),
     status: invoiceStatusEnum('status').notNull().default('Draft'),
     remarks: text('remarks'),
     enteredBy: uuid('entered_by').references(() => users.id),
     approvedAt: timestamp('approved_at'),
     approvedBy: uuid('approved_by').references(() => users.id),
+    versionNo: integer('version_no').notNull().default(1),
     deletedAt: timestamp('deleted_at'),
     deletedBy: uuid('deleted_by').references(() => users.id),
 }, (table) => ({
@@ -311,9 +384,14 @@ export const invoiceLines = pgTable('invoice_lines', {
     id: uuid('id').primaryKey().defaultRandom(),
     invoiceId: uuid('invoice_id').notNull().references(() => invoices.id),
     poItemId: uuid('po_item_id').notNull().references(() => poItems.id),
+    grnItemId: uuid('grn_item_id').references(() => grnItems.id),
     itemId: uuid('item_id').notNull().references(() => items.id),
     quantity: decimal('quantity', { precision: 12, scale: 2 }).notNull(),
     unitPrice: decimal('unit_price', { precision: 12, scale: 2 }).notNull(),
+    taxRate: decimal('tax_rate', { precision: 5, scale: 2 }).notNull().default('0.00'),
+    baseAmount: decimal('base_amount', { precision: 14, scale: 2 }).notNull().default('0.00'),
+    taxAmount: decimal('tax_amount', { precision: 14, scale: 2 }).notNull().default('0.00'),
+    totalAmount: decimal('total_amount', { precision: 14, scale: 2 }).notNull().default('0.00'),
     lineAmount: decimal('line_amount', { precision: 12, scale: 2 }).notNull(),
 }, (table) => ({
     quantityPositive: check('invoice_lines_quantity_positive_chk', sql`${table.quantity} > 0`),
@@ -326,6 +404,9 @@ export const payments = pgTable('payments', {
     paymentNo: varchar('payment_no', { length: 50 }).notNull().unique(),
     vendorId: uuid('vendor_id').notNull().references(() => vendors.id),
     paymentDate: timestamp('payment_date').defaultNow(),
+    baseAmount: decimal('base_amount', { precision: 14, scale: 2 }).notNull().default('0.00'),
+    taxAmount: decimal('tax_amount', { precision: 14, scale: 2 }).notNull().default('0.00'),
+    totalAmount: decimal('total_amount', { precision: 14, scale: 2 }).notNull().default('0.00'),
     amount: decimal('amount', { precision: 12, scale: 2 }).notNull(),
     method: varchar('method', { length: 50 }).notNull(),
     status: paymentStatusEnum('status').notNull().default('Draft'),
@@ -336,6 +417,7 @@ export const payments = pgTable('payments', {
     postedBy: uuid('posted_by').references(() => users.id),
     cancelledAt: timestamp('cancelled_at'),
     cancelledBy: uuid('cancelled_by').references(() => users.id),
+    versionNo: integer('version_no').notNull().default(1),
 }, (table) => ({
     amountPositive: check('payments_amount_positive_chk', sql`${table.amount} > 0`),
 }));
@@ -357,6 +439,8 @@ export const activityLogs = pgTable('activity_logs', {
     description: text('description'),
     entityType: varchar('entity_type', { length: 50 }),
     entityId: uuid('entity_id'),
+    beforeData: jsonb('before_data'),
+    afterData: jsonb('after_data'),
     payload: jsonb('payload'),
     timestamp: timestamp('timestamp').defaultNow(),
     module: varchar('module', { length: 50 }),

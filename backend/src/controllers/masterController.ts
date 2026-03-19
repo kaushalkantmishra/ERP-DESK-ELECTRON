@@ -1,10 +1,10 @@
 import type { Request, Response } from 'express';
+import { and, eq, or, sql } from 'drizzle-orm';
 import { db } from '../db/drizzle.js';
-import { items, vendors, warehouses, categories, uoms } from '../db/schema.js';
-import { eq } from 'drizzle-orm';
+import { categories, items, uoms, vendors, warehouses } from '../db/schema.js';
+import { normalizeText, toDecimal } from '../erp.js';
 
-// Items
-export const getItems = async (req: Request, res: Response) => {
+export const getItems = async (_req: Request, res: Response) => {
     try {
         const result = await db.select({
             id: items.id,
@@ -15,21 +15,18 @@ export const getItems = async (req: Request, res: Response) => {
             taxRate: items.taxRate,
             reorderLevel: items.reorderLevel,
             category: categories.name,
-            uom: uoms.code
+            uom: uoms.code,
         })
             .from(items)
             .leftJoin(categories, eq(items.categoryId, categories.id))
             .leftJoin(uoms, eq(items.uomId, uoms.id));
 
-        // Correctly format numbers for frontend
-        const formattedResult = result.map(item => ({
+        res.json(result.map((item) => ({
             ...item,
             price: Number(item.price),
             taxRate: Number(item.taxRate),
-            reorderLevel: Number(item.reorderLevel)
-        }));
-
-        res.json(formattedResult);
+            reorderLevel: Number(item.reorderLevel),
+        })));
     } catch (error) {
         console.error(error);
         res.status(500).json({ message: 'Error fetching items' });
@@ -38,85 +35,163 @@ export const getItems = async (req: Request, res: Response) => {
 
 export const addItem = async (req: Request, res: Response) => {
     try {
-        const newItem = await db.insert(items).values(req.body).returning();
-        res.status(201).json(newItem[0]);
-    } catch (error) {
-        res.status(500).json({ message: 'Error adding item' });
+        const { code, name, categoryId, uomId, price, active = true, taxRate = 0, reorderLevel = 0 } = req.body;
+        if (!code || !name || !categoryId || !uomId) return res.status(400).json({ message: 'Code, name, category, and UOM are required' });
+        if (toDecimal(price) < 0 || toDecimal(taxRate) < 0 || toDecimal(reorderLevel) < 0) {
+            return res.status(400).json({ message: 'Price, tax rate, and reorder level must be non-negative' });
+        }
+
+        const category = await db.query.categories.findFirst({ where: eq(categories.id, categoryId as string) });
+        const uom = await db.query.uoms.findFirst({ where: eq(uoms.id, uomId as string) });
+        if (!category) return res.status(400).json({ message: 'Invalid category selected' });
+        if (!uom) return res.status(400).json({ message: 'Invalid UOM selected' });
+
+        const existing = await db.query.items.findFirst({ where: eq(items.code, String(code).trim()) });
+        if (existing) return res.status(400).json({ message: 'Item code already exists' });
+
+        const [newItem] = await db.insert(items).values({
+            code: String(code).trim().toUpperCase(),
+            name: String(name).trim(),
+            categoryId,
+            uomId,
+            price: toDecimal(price).toFixed(2),
+            active: !!active,
+            taxRate: toDecimal(taxRate).toFixed(2),
+            reorderLevel: toDecimal(reorderLevel).toFixed(2),
+        }).returning();
+
+        res.status(201).json(newItem);
+    } catch (error: any) {
+        console.error(error);
+        res.status(500).json({ message: error.message || 'Error adding item' });
     }
 };
 
-// Vendors
-export const getVendors = async (req: Request, res: Response) => {
+export const getVendors = async (_req: Request, res: Response) => {
     try {
         const result = await db.select().from(vendors);
         res.json(result);
     } catch (error) {
+        console.error(error);
         res.status(500).json({ message: 'Error fetching vendors' });
     }
 };
 
 export const addVendor = async (req: Request, res: Response) => {
     try {
-        const newVendor = await db.insert(vendors).values(req.body).returning();
-        res.status(201).json(newVendor[0]);
-    } catch (error) {
-        res.status(500).json({ message: 'Error adding vendor' });
+        const payload = req.body;
+        if (!payload.name || !payload.email) return res.status(400).json({ message: 'Vendor name and email are required' });
+
+        const normalizedName = normalizeText(String(payload.name));
+        const existingVendor = await db.query.vendors.findFirst({
+            where: or(
+                eq(vendors.email, String(payload.email).trim().toLowerCase()),
+                sql`lower(trim(${vendors.name})) = ${normalizedName}`,
+            ),
+        });
+
+        if (existingVendor) {
+            return res.status(400).json({ message: 'A vendor with the same name or email already exists' });
+        }
+
+        const [newVendor] = await db.insert(vendors).values({
+            ...payload,
+            name: String(payload.name).trim(),
+            email: String(payload.email).trim().toLowerCase(),
+            rating: Number(payload.rating || 0),
+            active: payload.active !== false,
+        }).returning();
+
+        res.status(201).json(newVendor);
+    } catch (error: any) {
+        console.error(error);
+        res.status(500).json({ message: error.message || 'Error adding vendor' });
     }
 };
 
-// Warehouses
-export const getWarehouses = async (req: Request, res: Response) => {
+export const getWarehouses = async (_req: Request, res: Response) => {
     try {
         const result = await db.select().from(warehouses);
         res.json(result);
     } catch (error) {
+        console.error(error);
         res.status(500).json({ message: 'Error fetching warehouses' });
     }
 };
 
 export const addWarehouse = async (req: Request, res: Response) => {
     try {
-        const newWH = await db.insert(warehouses).values(req.body).returning();
-        res.status(201).json(newWH[0]);
-    } catch (error) {
-        res.status(500).json({ message: 'Error adding warehouse' });
+        const { code, name, location, managerId } = req.body;
+        if (!code || !name || !location) return res.status(400).json({ message: 'Warehouse code, name, and location are required' });
+        const existing = await db.query.warehouses.findFirst({
+            where: or(eq(warehouses.code, String(code).trim().toUpperCase()), eq(warehouses.name, String(name).trim())),
+        });
+        if (existing) return res.status(400).json({ message: 'Warehouse code or name already exists' });
+
+        const [newWH] = await db.insert(warehouses).values({
+            code: String(code).trim().toUpperCase(),
+            name: String(name).trim(),
+            location: String(location).trim(),
+            managerId: managerId || null,
+        }).returning();
+        res.status(201).json(newWH);
+    } catch (error: any) {
+        console.error(error);
+        res.status(500).json({ message: error.message || 'Error adding warehouse' });
     }
 };
 
-// Categories
-export const getCategories = async (req: Request, res: Response) => {
+export const getCategories = async (_req: Request, res: Response) => {
     try {
         const result = await db.select().from(categories);
         res.json(result);
     } catch (error) {
+        console.error(error);
         res.status(500).json({ message: 'Error fetching categories' });
     }
 };
 
 export const addCategory = async (req: Request, res: Response) => {
     try {
-        const newCat = await db.insert(categories).values(req.body).returning();
-        res.status(201).json(newCat[0]);
-    } catch (error) {
-        res.status(500).json({ message: 'Error adding category' });
+        const { name, description } = req.body;
+        if (!name) return res.status(400).json({ message: 'Category name is required' });
+        const existing = await db.query.categories.findFirst({ where: eq(categories.name, String(name).trim()) });
+        if (existing) return res.status(400).json({ message: 'Category already exists' });
+        const [newCat] = await db.insert(categories).values({
+            name: String(name).trim(),
+            description: description ? String(description).trim() : null,
+        }).returning();
+        res.status(201).json(newCat);
+    } catch (error: any) {
+        console.error(error);
+        res.status(500).json({ message: error.message || 'Error adding category' });
     }
 };
 
-// UoMs
-export const getUoms = async (req: Request, res: Response) => {
+export const getUoms = async (_req: Request, res: Response) => {
     try {
         const result = await db.select().from(uoms);
         res.json(result);
     } catch (error) {
+        console.error(error);
         res.status(500).json({ message: 'Error fetching UoMs' });
     }
 };
 
 export const addUom = async (req: Request, res: Response) => {
     try {
-        const newUom = await db.insert(uoms).values(req.body).returning();
-        res.status(201).json(newUom[0]);
-    } catch (error) {
-        res.status(500).json({ message: 'Error adding UoM' });
+        const { code, name } = req.body;
+        if (!code || !name) return res.status(400).json({ message: 'UOM code and name are required' });
+        const normalizedCode = String(code).trim().toUpperCase();
+        const existing = await db.query.uoms.findFirst({ where: eq(uoms.code, normalizedCode) });
+        if (existing) return res.status(400).json({ message: 'UOM code already exists' });
+        const [newUom] = await db.insert(uoms).values({
+            code: normalizedCode,
+            name: String(name).trim(),
+        }).returning();
+        res.status(201).json(newUom);
+    } catch (error: any) {
+        console.error(error);
+        res.status(500).json({ message: error.message || 'Error adding UoM' });
     }
 };

@@ -150,6 +150,11 @@ export interface QuotationLine {
     itemId: string;
     qty: number;
     unitPrice: number;
+    taxRate?: number;
+    baseAmount?: number;
+    taxAmount?: number;
+    totalAmount?: number;
+    priceVariancePct?: number;
     item?: Item;
 }
 
@@ -158,9 +163,12 @@ export interface Quotation {
     rfqId: string;
     vendorId: string;
     totalAmount: number;
+    baseAmount?: number;
+    taxAmount?: number;
     deliveryDate: string;
     submittedDate: string;
     status: 'Pending' | 'Accepted' | 'Rejected';
+    notes?: string;
     quotationItems?: QuotationLine[];
     vendor?: Vendor;
 }
@@ -173,10 +181,19 @@ export interface PurchaseOrderLine {
     itemId: string;
     orderedQty: number;
     unitPrice: number;
+    taxRate?: number;
+    baseAmount?: number;
+    taxAmount?: number;
+    totalAmount?: number;
     receivedQty: number;
     acceptedQty: number;
     invoicedQty: number;
+    paidQty?: number;
     cancelledQty: number;
+    priceVariancePct?: number;
+    openReceiptQty?: number;
+    openInvoiceQty?: number;
+    openPaymentQty?: number;
     item?: Item;
 }
 
@@ -188,6 +205,11 @@ export interface PurchaseOrder {
     vendorId: string;
     date: string;
     totalAmount: number;
+    baseAmount?: number;
+    taxAmount?: number;
+    currency?: string;
+    priceVariancePct?: number;
+    varianceAlert?: boolean;
     status: POStatus;
     deliveryDate: string;
     poItems: PurchaseOrderLine[];
@@ -204,6 +226,10 @@ export interface GRNLine {
     receivedQty: number;
     acceptedQty: number;
     rejectedQty: number;
+    unitCost?: number;
+    baseAmount?: number;
+    taxAmount?: number;
+    totalAmount?: number;
     rejectionReason?: string;
     disposition?: string;
     item?: Item;
@@ -217,6 +243,10 @@ export interface GRN {
     receivedDate: string;
     receivedBy: string;
     warehouseId: string;
+    baseAmount?: number;
+    taxAmount?: number;
+    totalAmount?: number;
+    warnings?: string[];
     status: GRNStatus;
     grnItems?: GRNLine[];
     po?: PurchaseOrder;
@@ -232,6 +262,10 @@ export interface InvoiceLine {
     itemId: string;
     quantity: number;
     unitPrice: number;
+    taxRate?: number;
+    baseAmount?: number;
+    taxAmount?: number;
+    totalAmount?: number;
     lineAmount: number;
     item?: Item;
     poItem?: PurchaseOrderLine;
@@ -245,10 +279,14 @@ export interface Invoice {
     poId: string;
     date: string;
     dueDate: string;
+    currency?: string;
+    baseAmount?: number;
+    taxAmount?: number;
     amount: number;
     matchedAmount: number;
     paidAmount: number;
     balanceAmount: number;
+    matchWarnings?: string[];
     status: InvoiceStatus;
     remarks?: string;
     vendor?: Vendor;
@@ -271,6 +309,9 @@ export interface Payment {
     paymentNo: string;
     vendorId: string;
     paymentDate: string;
+    baseAmount?: number;
+    taxAmount?: number;
+    totalAmount?: number;
     amount: number;
     method: string;
     status: PaymentStatus;

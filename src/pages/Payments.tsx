@@ -148,6 +148,7 @@ const Payments: React.FC = () => {
                                     <th>Invoice</th>
                                     <th>PO</th>
                                     <th>Balance</th>
+                                    <th>Status</th>
                                     <th>Allocate</th>
                                 </tr>
                             </thead>
@@ -159,13 +160,14 @@ const Payments: React.FC = () => {
                                             <td>{invoice.vendorInvoiceNo} / {invoice.invoiceNo}</td>
                                             <td>{invoice.po?.poNo || invoice.poId}</td>
                                             <td className="font-mono">${Number(invoice.balanceAmount).toFixed(2)}</td>
+                                            <td><span className="badge badge-info">{invoice.status}</span></td>
                                             <td>
                                                 <input type="number" min="0" max={Number(invoice.balanceAmount)} step="0.01" className="input-vscode w-full" value={allocation?.allocatedAmount || 0} onChange={(e) => updateAllocation(invoice.id, Number(e.target.value) || 0)} />
                                             </td>
                                         </tr>
                                     );
                                 })}
-                                {selectedVendorId && vendorInvoices.length === 0 && <tr><td colSpan={4} className="p-4 text-center text-vscode-text-muted">No approved invoices for this vendor.</td></tr>}
+                                {selectedVendorId && vendorInvoices.length === 0 && <tr><td colSpan={5} className="p-4 text-center text-vscode-text-muted">No approved invoices for this vendor.</td></tr>}
                             </tbody>
                         </table>
                     </div>

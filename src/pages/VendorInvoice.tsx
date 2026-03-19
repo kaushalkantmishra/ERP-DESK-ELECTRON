@@ -177,6 +177,7 @@ const VendorInvoice: React.FC = () => {
                                         <th>Item</th>
                                         <th>Accepted Qty</th>
                                         <th>Already Invoiced</th>
+                                        <th>Open Qty</th>
                                         <th>Invoice Qty</th>
                                         <th>Unit Price</th>
                                         <th>Line Total</th>
@@ -190,6 +191,7 @@ const VendorInvoice: React.FC = () => {
                                                 <td>{poLine?.item?.code || line.itemId} - {poLine?.item?.name || 'Item'}</td>
                                                 <td>{poLine?.acceptedQty || 0}</td>
                                                 <td>{poLine?.invoicedQty || 0}</td>
+                                                <td className="font-mono">{Math.max(0, Number(poLine?.acceptedQty || 0) - Number(poLine?.invoicedQty || 0))}</td>
                                                 <td>
                                                     <input type="number" min="0" className="input-vscode w-full" value={line.quantity} onChange={(e) => updateLine(index, { quantity: Number(e.target.value) || 0 })} />
                                                 </td>
@@ -241,14 +243,24 @@ const VendorInvoice: React.FC = () => {
                                 <td>{invoice.po?.poNo || invoice.poId}</td>
                                 <td className="font-mono">${Number(invoice.amount).toFixed(2)}</td>
                                 <td className="font-mono">${Number(invoice.balanceAmount).toFixed(2)}</td>
-                                <td><span className="badge badge-info">{invoice.status}</span></td>
                                 <td>
-                                    {invoice.status === 'Matched' && (
+                                    <div className="flex items-center gap-2">
+                                        <span className="badge badge-info">{invoice.status}</span>
+                                        {invoice.matchWarnings && invoice.matchWarnings.length > 0 && <span className="badge badge-warning">Mismatch</span>}
+                                    </div>
+                                </td>
+                                <td>
+                                    <div className="flex items-center gap-2">
+                                        {invoice.status === 'Matched' && (
                                         <button className="btn-secondary py-1 px-2 text-xs flex items-center gap-1" onClick={() => void approveInvoice(invoice.id)}>
                                             <CheckCircle size={12} />
                                             Approve
                                         </button>
-                                    )}
+                                        )}
+                                        {invoice.matchWarnings && invoice.matchWarnings.length > 0 && (
+                                            <button className="text-xs text-status-warning hover:underline" onClick={() => alert(invoice.matchWarnings?.join('\n'))}>View Warnings</button>
+                                        )}
+                                    </div>
                                 </td>
                             </tr>
                         ))}

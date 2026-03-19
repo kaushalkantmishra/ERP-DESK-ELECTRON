@@ -15,6 +15,13 @@
       "when": 1773837986049,
       "tag": "0001_fast_redwing",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1773923053535,
+      "tag": "0002_magenta_power_pack",
+      "breakpoints": true
     }
   ]
 }

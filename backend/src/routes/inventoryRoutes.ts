@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import {
-    getGRNs, createGRN,
+    getGRNs, createGRN, reverseGRN,
     getStockLevels, getTransactions, createStockTransaction,
     getMaterialRequests, createMaterialRequest
 } from '../controllers/inventoryController.js';
@@ -12,6 +12,7 @@ router.use(authMiddleware);
 
 router.get('/grns', getGRNs);
 router.post('/grn', roleMiddleware(['Admin', 'Store']), createGRN);
+router.post('/grns/:id/reverse', roleMiddleware(['Admin', 'Store']), reverseGRN);
 
 router.get('/stock/levels', getStockLevels);
 router.get('/stock/transactions', getTransactions);

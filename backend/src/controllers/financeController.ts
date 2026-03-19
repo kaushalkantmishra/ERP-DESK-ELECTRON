@@ -10,36 +10,49 @@ import {
     purchaseOrders,
 } from '../db/schema.js';
 import type { AuthRequest } from '../middleware/auth.js';
-import { logActivity } from '../lib/audit.js';
-import { assertTransition, invoiceTransitions, roundMoney, toDecimal } from '../lib/workflow.js';
+import { logActivity } from '../audit.js';
+import {
+    STRICT_TRANSITIONS,
+    assertTransition,
+    computeTaxAmounts,
+    enforceTolerance,
+    generateDocumentNo,
+    getSettings,
+    optimisticVersionUpdate,
+    percentVariance,
+    roundMoney,
+    toDecimal,
+} from '../erp.js';
 
 function requireUserId(req: AuthRequest): string {
-    if (!req.user?.id) {
-        throw new Error('Authenticated user is required');
-    }
+    if (!req.user?.id) throw new Error('Authenticated user is required');
     return req.user.id;
 }
 
-function generateDocumentNo(prefix: string): string {
-    return `${prefix}-${Date.now()}`;
+function enrichInvoice(invoice: any) {
+    const amount = toDecimal(invoice.amount);
+    const paidAmount = toDecimal(invoice.paidAmount);
+    const balanceAmount = toDecimal(invoice.balanceAmount);
+    return {
+        ...invoice,
+        amount,
+        paidAmount,
+        balanceAmount,
+        openPaymentAmount: roundMoney(Math.max(0, balanceAmount)),
+    };
 }
 
-export const getInvoices = async (req: AuthRequest, res: Response) => {
+export const getInvoices = async (_req: AuthRequest, res: Response) => {
     try {
         const result = await db.query.invoices.findMany({
             with: {
                 vendor: true,
-                po: true,
-                invoiceLines: {
-                    with: {
-                        item: true,
-                        poItem: true,
-                    },
-                },
+                po: { with: { poItems: { with: { item: true } } } },
+                invoiceLines: { with: { item: true, poItem: true } },
                 paymentAllocations: true,
             },
         });
-        res.json(result);
+        res.json(result.map(enrichInvoice));
     } catch (error) {
         console.error(error);
         res.status(500).json({ message: 'Error fetching invoices' });
@@ -57,86 +70,109 @@ export const createInvoice = async (req: AuthRequest, res: Response) => {
     try {
         const po = await db.query.purchaseOrders.findFirst({
             where: eq(purchaseOrders.id, poId as string),
-            with: { poItems: true },
+            with: { poItems: { with: { item: true } }, grns: true },
+        });
+        if (!po) return res.status(404).json({ message: 'PO not found' });
+        if (po.vendorId !== vendorId) return res.status(400).json({ message: 'Invoice vendor must match PO vendor' });
+        if (!['Partially Received', 'Fully Received', 'Closed'].includes(po.status)) {
+            return res.status(400).json({ message: 'Invoice can only be entered after goods receipt activity has started' });
+        }
+        if ((po.grns || []).length === 0) {
+            return res.status(400).json({ message: 'Invoice cannot be entered before GRN exists' });
+        }
+
+        const settings = await db.transaction((tx) => getSettings(tx));
+        const poItemMap = new Map((po.poItems || []).map((line) => [line.id, line]));
+        const matchWarnings: string[] = [];
+
+        let baseAmount = 0;
+        let taxAmount = 0;
+
+        const preparedLines = lines.map((line: any) => {
+            const poLine = poItemMap.get(line.poItemId);
+            if (!poLine) throw new Error('Invoice line references an invalid PO line');
+
+            const lineQty = toDecimal(line.quantity);
+            const unitPrice = toDecimal(line.unitPrice);
+            const acceptedQty = toDecimal(poLine.acceptedQty);
+            const invoicedQty = toDecimal(poLine.invoicedQty);
+            const openInvoiceQty = roundMoney(acceptedQty - invoicedQty);
+            if (lineQty <= 0) throw new Error('Invoice quantity must be greater than zero');
+            const toleranceResult = enforceTolerance(lineQty, openInvoiceQty, settings.qtyTolerancePct, `Invoice quantity for ${poLine.item?.code || poLine.itemId}`, settings.warnOnlyOnTolerance);
+            if (toleranceResult.message) matchWarnings.push(toleranceResult.message);
+
+            const priceVariancePct = percentVariance(toDecimal(poLine.unitPrice), unitPrice);
+            if (Math.abs(priceVariancePct) > settings.priceVariancePct) {
+                matchWarnings.push(`Invoice unit price variance exceeded threshold for ${poLine.item?.code || poLine.itemId}`);
+            }
+
+            const taxRate = toDecimal(poLine.taxRate);
+            const amounts = computeTaxAmounts(lineQty, unitPrice, taxRate);
+            baseAmount = roundMoney(baseAmount + amounts.baseAmount);
+            taxAmount = roundMoney(taxAmount + amounts.taxAmount);
+
+            return {
+                poItemId: poLine.id,
+                itemId: poLine.itemId,
+                quantity: lineQty.toFixed(2),
+                unitPrice: unitPrice.toFixed(2),
+                taxRate: taxRate.toFixed(2),
+                baseAmount: amounts.baseAmount.toFixed(2),
+                taxAmount: amounts.taxAmount.toFixed(2),
+                totalAmount: amounts.totalAmount.toFixed(2),
+                lineAmount: amounts.totalAmount.toFixed(2),
+            };
         });
 
-        if (!po) {
-            return res.status(404).json({ message: 'PO not found' });
-        }
-        if (po.vendorId !== vendorId) {
-            return res.status(400).json({ message: 'Invoice vendor must match PO vendor' });
-        }
-        if (!['Partially Received', 'Fully Received', 'Closed'].includes(po.status)) {
-            return res.status(400).json({ message: 'Invoice can only be entered after receipt activity has started' });
-        }
-
-        const poItemMap = new Map(po.poItems.map((line) => [line.id, line]));
-        const invoiceTotal = roundMoney(lines.reduce((sum: number, line: any) => {
-            return sum + (toDecimal(line.quantity) * toDecimal(line.unitPrice));
-        }, 0));
+        const invoiceTotal = roundMoney(baseAmount + taxAmount);
         const requestedAmount = roundMoney(toDecimal(amount ?? invoiceTotal));
-
         if (requestedAmount !== invoiceTotal) {
-            return res.status(400).json({ message: 'Invoice amount must equal the sum of invoice lines' });
+            return res.status(400).json({ message: 'Invoice amount must equal the sum of invoice lines including VAT' });
         }
 
         const newInvoice = await db.transaction(async (tx) => {
+            const invoiceNo = await generateDocumentNo(tx, 'INV', new Date(invoiceData.date || new Date()));
             const [invoice] = await tx.insert(invoices).values({
                 ...invoiceData,
-                invoiceNo: invoiceData.invoiceNo || generateDocumentNo('INV'),
-                vendorInvoiceNo: invoiceData.vendorInvoiceNo || invoiceData.invoiceNo || generateDocumentNo('VINV'),
+                invoiceNo,
+                vendorInvoiceNo: invoiceData.vendorInvoiceNo || invoiceNo,
                 poId,
                 vendorId,
+                currency: invoiceData.currency || 'AED',
+                baseAmount: baseAmount.toFixed(2),
+                taxAmount: taxAmount.toFixed(2),
                 amount: requestedAmount.toFixed(2),
                 matchedAmount: invoiceTotal.toFixed(2),
                 paidAmount: '0.00',
                 balanceAmount: requestedAmount.toFixed(2),
+                matchWarnings: matchWarnings.length > 0 ? matchWarnings : null,
                 status: 'Matched',
                 enteredBy: userId,
             }).returning();
 
-            for (const line of lines) {
-                const poLine = poItemMap.get(line.poItemId);
-                if (!poLine) {
-                    throw new Error('Invoice line references an invalid PO line');
-                }
-
-                const lineQty = toDecimal(line.quantity);
-                const alreadyInvoicedQty = toDecimal(poLine.invoicedQty);
-                const receivedAcceptedQty = toDecimal(poLine.acceptedQty);
-                if (line.itemId !== poLine.itemId) {
-                    throw new Error('Invoice item must match PO item');
-                }
-                if (lineQty <= 0) {
-                    throw new Error('Invoice quantity must be greater than zero');
-                }
-                if (alreadyInvoicedQty + lineQty > receivedAcceptedQty) {
-                    throw new Error('Invoice quantity exceeds accepted quantity on the PO');
-                }
-
-                const lineAmount = roundMoney(lineQty * toDecimal(line.unitPrice));
-                await tx.insert(invoiceLines).values({
+            const insertedLines = [];
+            for (const preparedLine of preparedLines) {
+                const [insertedLine] = await tx.insert(invoiceLines).values({
                     invoiceId: invoice.id,
-                    poItemId: poLine.id,
-                    itemId: poLine.itemId,
-                    quantity: lineQty.toFixed(2),
-                    unitPrice: toDecimal(line.unitPrice).toFixed(2),
-                    lineAmount: lineAmount.toFixed(2),
-                });
+                    ...preparedLine,
+                }).returning();
+                insertedLines.push(insertedLine);
 
+                const poLine = poItemMap.get(preparedLine.poItemId)!;
                 await tx.update(poItems).set({
-                    invoicedQty: (alreadyInvoicedQty + lineQty).toFixed(2),
+                    invoicedQty: roundMoney(toDecimal(poLine.invoicedQty) + toDecimal(preparedLine.quantity)).toFixed(2),
                 }).where(eq(poItems.id, poLine.id));
             }
 
             await logActivity(tx, {
                 userId,
                 action: 'INVOICE_CREATED',
-                description: `Invoice ${invoice.invoiceNo} entered against PO ${po.poNo}`,
+                description: `Invoice ${invoiceNo} entered against PO ${po.poNo}`,
                 module: 'Finance',
                 entityType: 'Invoice',
                 entityId: invoice.id,
-                payload: { poId, vendorId, amount: requestedAmount },
+                afterData: { ...invoice, invoiceLines: insertedLines },
+                payload: { poId, vendorId, amount: requestedAmount, matchWarnings },
             });
 
             return invoice;
@@ -155,19 +191,36 @@ export const updateInvoiceStatus = async (req: AuthRequest, res: Response) => {
     const { status } = req.body;
 
     try {
-        const invoice = await db.query.invoices.findFirst({ where: eq(invoices.id, id as string) });
-        if (!invoice) {
-            return res.status(404).json({ message: 'Invoice not found' });
+        const invoice = await db.query.invoices.findFirst({
+            where: eq(invoices.id, id as string),
+            with: { invoiceLines: true },
+        });
+        if (!invoice) return res.status(404).json({ message: 'Invoice not found' });
+
+        assertTransition(invoice.status, status, STRICT_TRANSITIONS.Invoice, 'Invoice');
+
+        if (status === 'Cancelled' && toDecimal(invoice.paidAmount) > 0) {
+            return res.status(400).json({ message: 'Paid or partially paid invoices cannot be cancelled' });
         }
 
-        assertTransition(invoice.status, status, invoiceTransitions, 'Invoice');
+        const patch: Record<string, unknown> = { status };
+        if (status === 'Approved') {
+            patch.approvedAt = new Date();
+            patch.approvedBy = userId;
+        }
 
         await db.transaction(async (tx) => {
-            await tx.update(invoices).set({
-                status,
-                approvedAt: status === 'Approved' ? new Date() : invoice.approvedAt,
-                approvedBy: status === 'Approved' ? userId : invoice.approvedBy,
-            }).where(eq(invoices.id, id as string));
+            const updated = await optimisticVersionUpdate(tx, invoices, invoices.id, invoice.id, invoice.versionNo, patch);
+
+            if (status === 'Cancelled') {
+                for (const line of invoice.invoiceLines || []) {
+                    const poLine = await tx.query.poItems.findFirst({ where: eq(poItems.id, line.poItemId) });
+                    if (!poLine) continue;
+                    await tx.update(poItems).set({
+                        invoicedQty: roundMoney(toDecimal(poLine.invoicedQty) - toDecimal(line.quantity)).toFixed(2),
+                    }).where(eq(poItems.id, poLine.id));
+                }
+            }
 
             await logActivity(tx, {
                 userId,
@@ -176,6 +229,8 @@ export const updateInvoiceStatus = async (req: AuthRequest, res: Response) => {
                 module: 'Finance',
                 entityType: 'Invoice',
                 entityId: invoice.id,
+                beforeData: invoice,
+                afterData: updated,
                 payload: { from: invoice.status, to: status },
             });
         });
@@ -187,16 +242,12 @@ export const updateInvoiceStatus = async (req: AuthRequest, res: Response) => {
     }
 };
 
-export const getPayments = async (req: AuthRequest, res: Response) => {
+export const getPayments = async (_req: AuthRequest, res: Response) => {
     try {
         const result = await db.query.payments.findMany({
             with: {
                 vendor: true,
-                paymentAllocations: {
-                    with: {
-                        invoice: true,
-                    },
-                },
+                paymentAllocations: { with: { invoice: true } },
             },
         });
         res.json(result);
@@ -216,19 +267,20 @@ export const createPayment = async (req: AuthRequest, res: Response) => {
 
     try {
         const paymentAmount = roundMoney(toDecimal(amount));
-        const allocationTotal = roundMoney(allocations.reduce((sum: number, allocation: any) => {
-            return sum + toDecimal(allocation.allocatedAmount);
-        }, 0));
-
+        const allocationTotal = roundMoney(allocations.reduce((sum: number, allocation: any) => sum + toDecimal(allocation.allocatedAmount), 0));
         if (paymentAmount !== allocationTotal) {
             return res.status(400).json({ message: 'Payment amount must equal allocation total' });
         }
 
         const newPayment = await db.transaction(async (tx) => {
+            const paymentNo = await generateDocumentNo(tx, 'PAY', new Date(paymentData.paymentDate || new Date()));
             const [payment] = await tx.insert(payments).values({
                 ...paymentData,
-                paymentNo: paymentData.paymentNo || generateDocumentNo('PAY'),
+                paymentNo,
                 vendorId,
+                baseAmount: paymentAmount.toFixed(2),
+                taxAmount: '0.00',
+                totalAmount: paymentAmount.toFixed(2),
                 amount: paymentAmount.toFixed(2),
                 method,
                 status: 'Posted',
@@ -240,23 +292,16 @@ export const createPayment = async (req: AuthRequest, res: Response) => {
             for (const allocation of allocations) {
                 const invoice = await tx.query.invoices.findFirst({
                     where: and(eq(invoices.id, allocation.invoiceId), eq(invoices.vendorId, vendorId)),
+                    with: { invoiceLines: true },
                 });
-                if (!invoice) {
-                    throw new Error('Allocation references an invalid invoice for this vendor');
-                }
-                if (!['Approved', 'Partially Paid'].includes(invoice.status)) {
-                    throw new Error(`Invoice ${invoice.invoiceNo} is not ready for payment`);
-                }
+                if (!invoice) throw new Error('Allocation references an invalid invoice for this vendor');
+                if (!['Approved', 'Partially Paid'].includes(invoice.status)) throw new Error(`Invoice ${invoice.invoiceNo} is not ready for payment`);
 
                 const allocatedAmount = toDecimal(allocation.allocatedAmount);
                 const currentPaid = toDecimal(invoice.paidAmount);
                 const currentBalance = toDecimal(invoice.balanceAmount);
-                if (allocatedAmount <= 0) {
-                    throw new Error('Allocated amount must be greater than zero');
-                }
-                if (allocatedAmount > currentBalance) {
-                    throw new Error(`Allocation exceeds remaining balance for invoice ${invoice.invoiceNo}`);
-                }
+                if (allocatedAmount <= 0) throw new Error('Allocated amount must be greater than zero');
+                if (allocatedAmount > currentBalance) throw new Error(`Allocation exceeds remaining balance for invoice ${invoice.invoiceNo}`);
 
                 await tx.insert(paymentAllocations).values({
                     paymentId: payment.id,
@@ -266,20 +311,32 @@ export const createPayment = async (req: AuthRequest, res: Response) => {
 
                 const newPaid = roundMoney(currentPaid + allocatedAmount);
                 const newBalance = roundMoney(currentBalance - allocatedAmount);
-                await tx.update(invoices).set({
+                const nextStatus = newBalance === 0 ? 'Paid' : 'Partially Paid';
+                await optimisticVersionUpdate(tx, invoices, invoices.id, invoice.id, invoice.versionNo, {
                     paidAmount: newPaid.toFixed(2),
                     balanceAmount: newBalance.toFixed(2),
-                    status: newBalance === 0 ? 'Paid' : 'Partially Paid',
-                }).where(eq(invoices.id, invoice.id));
+                    status: nextStatus,
+                });
+
+                const allocationRatio = invoice.amount ? allocatedAmount / toDecimal(invoice.amount) : 0;
+                for (const line of invoice.invoiceLines || []) {
+                    const poLine = await tx.query.poItems.findFirst({ where: eq(poItems.id, line.poItemId) });
+                    if (!poLine) continue;
+                    const paidQtyDelta = roundMoney(toDecimal(line.quantity) * allocationRatio);
+                    await tx.update(poItems).set({
+                        paidQty: roundMoney(toDecimal(poLine.paidQty) + paidQtyDelta).toFixed(2),
+                    }).where(eq(poItems.id, poLine.id));
+                }
             }
 
             await logActivity(tx, {
                 userId,
                 action: 'PAYMENT_POSTED',
-                description: `Payment ${payment.paymentNo} posted`,
+                description: `Payment ${paymentNo} posted`,
                 module: 'Finance',
                 entityType: 'Payment',
                 entityId: payment.id,
+                afterData: payment,
                 payload: { vendorId, amount: paymentAmount },
             });
 

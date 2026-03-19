@@ -103,7 +103,7 @@ const PurchaseOrderList: React.FC = () => {
             <div className="px-4 pb-3 flex items-center gap-3 border-b border-vscode-border">
                 <div>
                     <div className="text-sm font-semibold">Purchase Orders</div>
-                    <div className="text-xs text-vscode-text-muted">Create draft POs from approved PRs, then issue them for receipt.</div>
+                    <div className="text-xs text-vscode-text-muted">Create draft POs from approved PRs, review price variance, then issue them for receipt.</div>
                 </div>
                 <button className="btn-primary flex items-center gap-2 ml-auto" onClick={() => setIsCreating((current) => !current)}>
                     <PlusCircle size={14} />
@@ -190,6 +190,7 @@ const PurchaseOrderList: React.FC = () => {
                             <th>Vendor</th>
                             <th>Delivery</th>
                             <th>Total</th>
+                            <th>Open Qty</th>
                             <th>Status</th>
                             <th>Action</th>
                         </tr>
@@ -202,16 +203,34 @@ const PurchaseOrderList: React.FC = () => {
                                 <td>{po.vendor?.name || vendors.find((vendor) => vendor.id === po.vendorId)?.name || po.vendorId}</td>
                                 <td>{po.deliveryDate ? new Date(po.deliveryDate).toLocaleDateString() : '-'}</td>
                                 <td className="font-mono">${Number(po.totalAmount).toFixed(2)}</td>
-                                <td><span className="badge badge-info">{po.status}</span></td>
+                                <td className="font-mono text-xs">
+                                    {(po.poItems || []).reduce((sum, line) => sum + Number(line.openReceiptQty ?? (Number(line.orderedQty) - Number(line.receivedQty) - Number(line.cancelledQty))), 0).toFixed(2)}
+                                </td>
+                                <td>
+                                    <div className="flex items-center gap-2">
+                                        <span className="badge badge-info">{po.status}</span>
+                                        {po.varianceAlert && <span className="badge badge-warning">Variance</span>}
+                                    </div>
+                                </td>
                                 <td>
                                     <div className="flex items-center gap-2">
                                         {po.status === 'Draft' && (
-                                            <button className="btn-secondary py-1 px-2 text-xs flex items-center gap-1" onClick={() => void handleIssuePO(po)}>
+                                            <button
+                                                className={`btn-secondary py-1 px-2 text-xs flex items-center gap-1 ${po.varianceAlert ? 'opacity-70' : ''}`}
+                                                onClick={() => {
+                                                    if (po.varianceAlert && !window.confirm('This PO has a price variance above threshold. Do you still want to issue it?')) return;
+                                                    void handleIssuePO(po);
+                                                }}
+                                            >
                                                 <Send size={12} />
                                                 Issue
                                             </button>
                                         )}
-                                        <button className="text-vscode-accent hover:text-vscode-accent-hover p-1" title="View lines" onClick={() => alert((po.poItems || []).map((line) => `${line.item?.name || line.itemId}: ordered ${line.orderedQty}, received ${line.receivedQty}, accepted ${line.acceptedQty}`).join('\n'))}>
+                                        <button
+                                            className="text-vscode-accent hover:text-vscode-accent-hover p-1"
+                                            title="View lines"
+                                            onClick={() => alert((po.poItems || []).map((line) => `${line.item?.name || line.itemId}: ordered ${line.orderedQty}, received ${line.receivedQty}, open receipt ${Number(line.openReceiptQty ?? (Number(line.orderedQty) - Number(line.receivedQty) - Number(line.cancelledQty))).toFixed(2)}, variance ${Number(line.priceVariancePct || 0).toFixed(2)}%`).join('\n'))}
+                                        >
                                             <Eye size={14} />
                                         </button>
                                     </div>
@@ -219,7 +238,7 @@ const PurchaseOrderList: React.FC = () => {
                             </tr>
                         ))}
                         {!isLoading && pos.length === 0 && (
-                            <tr><td colSpan={7} className="p-4 text-center text-vscode-text-muted">No purchase orders yet.</td></tr>
+                            <tr><td colSpan={8} className="p-4 text-center text-vscode-text-muted">No purchase orders yet.</td></tr>
                         )}
                     </tbody>
                 </table>
