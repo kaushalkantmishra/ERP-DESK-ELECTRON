@@ -42,6 +42,8 @@ const Quotations: React.FC = () => {
         try {
             setIsLoading(true);
             await procurementService.createPO({
+                quotationId: quote.id,
+                prId: quote.rfq?.purchaseRequisition?.id || quote.rfq?.prId,
                 vendorId: quote.vendorId,
                 rfqId: quote.rfqId,
                 deliveryDate: quote.deliveryDate,

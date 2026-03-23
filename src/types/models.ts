@@ -180,6 +180,7 @@ export interface Quotation {
     notes?: string;
     quotationItems?: QuotationLine[];
     vendor?: Vendor;
+    rfq?: RFQ;
 }
 
 export type POStatus = 'Draft' | 'Issued' | 'Partially Received' | 'Fully Received' | 'Closed' | 'Cancelled';

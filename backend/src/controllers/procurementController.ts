@@ -30,7 +30,7 @@ import {
     toDecimal,
     toId,
 } from '../erp.js';
-import { sendRfqInvitationEmail } from '../lib/mailer.js';
+import { sendPurchaseOrderEmail, sendRfqInvitationEmail } from '../lib/mailer.js';
 import { buildQuotationTemplateWorkbook, parseQuotationTemplateWorkbook } from '../lib/quotationWorkbook.js';
 
 function requireUserId(req: AuthRequest): string | number {
@@ -847,7 +847,7 @@ export const getPO = async (req: AuthRequest, res: Response) => {
 
 export const createPO = async (req: AuthRequest, res: Response) => {
     const userId = getAuditUserId(req);
-    const { items: requestItems, prId, vendorId, deliveryDate, rfqId, ...poData } = req.body;
+    const { items: requestItems, prId, vendorId, deliveryDate, rfqId, quotationId, ...poData } = req.body;
 
     if (!Array.isArray(requestItems) || requestItems.length === 0) {
         return res.status(400).json({ message: 'PO must contain at least one item' });
@@ -855,11 +855,26 @@ export const createPO = async (req: AuthRequest, res: Response) => {
 
     try {
         const normalizedVendorId = toId(vendorId, 'vendor id');
-        const normalizedPrId = prId ? toId(prId, 'purchase requisition id') : null;
+        let normalizedPrId = prId ? toId(prId, 'purchase requisition id') : null;
         const normalizedRfqId = rfqId ? toId(rfqId, 'rfq id') : null;
+        const normalizedQuotationId = quotationId ? toId(quotationId, 'quotation id') : null;
         const vendor = await db.query.vendors.findFirst({ where: eq(vendors.id, normalizedVendorId) });
         if (!vendor) return res.status(404).json({ message: 'Vendor not found' });
         if (!vendor.active) return res.status(400).json({ message: 'Inactive vendor cannot be used for PO creation' });
+
+        let quotation: any = null;
+        if (normalizedQuotationId) {
+            quotation = await db.query.quotations.findFirst({
+                where: eq(quotations.id, normalizedQuotationId),
+                with: { quotationItems: { with: { item: true } }, rfq: { with: { purchaseRequisition: true } }, vendor: true },
+            });
+            if (!quotation) return res.status(404).json({ message: 'Quotation not found' });
+            if (quotation.vendorId !== normalizedVendorId) return res.status(400).json({ message: 'Quotation vendor does not match selected vendor' });
+            if (normalizedRfqId && quotation.rfqId !== normalizedRfqId) return res.status(400).json({ message: 'Quotation RFQ does not match selected RFQ' });
+            if (!normalizedPrId) {
+                normalizedPrId = quotation.rfq?.purchaseRequisition?.id || quotation.rfq?.prId || null;
+            }
+        }
 
         let pr: any = null;
         if (normalizedPrId) {
@@ -919,6 +934,15 @@ export const createPO = async (req: AuthRequest, res: Response) => {
             };
         });
 
+        const poEmailItems = preparedLines.map((line) => ({
+            itemCode: itemMap.get(line.itemId)?.code,
+            itemName: itemMap.get(line.itemId)?.name || `Item ${line.itemId}`,
+            quantity: toDecimal(line.orderedQty),
+            unitPrice: toDecimal(line.unitPrice),
+            taxRate: toDecimal(line.taxRate),
+            totalAmount: toDecimal(line.totalAmount),
+        }));
+
         const totalAmount = roundMoney(baseAmount + taxAmount);
 
         const newPO = await db.transaction(async (tx) => {
@@ -952,11 +976,28 @@ export const createPO = async (req: AuthRequest, res: Response) => {
                 entityType: 'PurchaseOrder',
                 entityId: po.id,
                 afterData: { ...po, poItems: insertedLines },
-                payload: { prId: normalizedPrId, vendorId: normalizedVendorId, totalAmount, varianceAlert, rfqId: normalizedRfqId },
+                payload: { prId: normalizedPrId, vendorId: normalizedVendorId, totalAmount, varianceAlert, rfqId: normalizedRfqId, quotationId: normalizedQuotationId },
             });
 
             return po;
         });
+
+        const poDeliveryDate = deliveryDate ? new Date(deliveryDate) : null;
+        try {
+            await sendPurchaseOrderEmail({
+                poNo: newPO.poNo,
+                vendor,
+                prNo: pr?.prNo || null,
+                rfqNo: quotation?.rfq?.rfqNo || null,
+                quotationId: normalizedQuotationId,
+                requestConfirmation: !!normalizedQuotationId,
+                deliveryDate: poDeliveryDate,
+                totalAmount,
+                items: poEmailItems,
+            });
+        } catch (emailError) {
+            console.error('Failed to send purchase order email:', emailError);
+        }
 
         res.status(201).json(newPO);
     } catch (error: any) {
