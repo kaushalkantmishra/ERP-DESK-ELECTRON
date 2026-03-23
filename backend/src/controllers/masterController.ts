@@ -2,7 +2,7 @@ import type { Request, Response } from 'express';
 import { and, eq, or, sql } from 'drizzle-orm';
 import { db } from '../db/drizzle.js';
 import { categories, items, uoms, vendors, warehouses } from '../db/schema.js';
-import { normalizeText, toDecimal } from '../erp.js';
+import { normalizeText, toDecimal, toId } from '../erp.js';
 
 export const getItems = async (_req: Request, res: Response) => {
     try {
@@ -41,8 +41,10 @@ export const addItem = async (req: Request, res: Response) => {
             return res.status(400).json({ message: 'Price, tax rate, and reorder level must be non-negative' });
         }
 
-        const category = await db.query.categories.findFirst({ where: eq(categories.id, categoryId as string) });
-        const uom = await db.query.uoms.findFirst({ where: eq(uoms.id, uomId as string) });
+        const normalizedCategoryId = toId(categoryId, 'category id');
+        const normalizedUomId = toId(uomId, 'uom id');
+        const category = await db.query.categories.findFirst({ where: eq(categories.id, normalizedCategoryId) });
+        const uom = await db.query.uoms.findFirst({ where: eq(uoms.id, normalizedUomId) });
         if (!category) return res.status(400).json({ message: 'Invalid category selected' });
         if (!uom) return res.status(400).json({ message: 'Invalid UOM selected' });
 
@@ -52,8 +54,8 @@ export const addItem = async (req: Request, res: Response) => {
         const [newItem] = await db.insert(items).values({
             code: String(code).trim().toUpperCase(),
             name: String(name).trim(),
-            categoryId,
-            uomId,
+            categoryId: normalizedCategoryId,
+            uomId: normalizedUomId,
             price: toDecimal(price).toFixed(2),
             active: !!active,
             taxRate: toDecimal(taxRate).toFixed(2),
@@ -153,13 +155,20 @@ export const getCategories = async (_req: Request, res: Response) => {
 
 export const addCategory = async (req: Request, res: Response) => {
     try {
-        const { name, description } = req.body;
+        const { name, description, uom } = req.body;
         if (!name) return res.status(400).json({ message: 'Category name is required' });
         const existing = await db.query.categories.findFirst({ where: eq(categories.name, String(name).trim()) });
         if (existing) return res.status(400).json({ message: 'Category already exists' });
+        let normalizedUom: string | null = null;
+        if (uom) {
+            normalizedUom = String(uom).trim().toUpperCase();
+            const existingUom = await db.query.uoms.findFirst({ where: eq(uoms.code, normalizedUom) });
+            if (!existingUom) return res.status(400).json({ message: 'Invalid UOM selected' });
+        }
         const [newCat] = await db.insert(categories).values({
             name: String(name).trim(),
             description: description ? String(description).trim() : null,
+            uom: normalizedUom,
         }).returning();
         res.status(201).json(newCat);
     } catch (error: any) {

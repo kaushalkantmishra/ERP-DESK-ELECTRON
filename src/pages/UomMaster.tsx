@@ -122,22 +122,22 @@ const UomMaster = () => {
             )}
 
             <div className="flex-1 overflow-auto p-4">
-                <table className="table-vscode w-full max-w-2xl">
+                <table className="table-vscode w-full">
                     <thead className="sticky top-0 bg-vscode-bg">
                         <tr>
+                            <th className="w-20">S.No</th>
                             <th className="w-32">Code</th>
                             <th>Name</th>
-                            <th className="w-48">ID</th>
                         </tr>
                     </thead>
                     <tbody>
                         {isLoading ? (
                             <tr><td colSpan={3} className="p-4 text-center text-vscode-text-muted">Loading UOMs...</td></tr>
-                        ) : filteredUoms.map(u => (
+                        ) : filteredUoms.map((u, index) => (
                             <tr key={u.id} className="hover:bg-vscode-list-hover group">
+                                <td className="font-mono text-xs text-vscode-text-muted">{index + 1}</td>
                                 <td className="font-mono text-xs font-semibold text-vscode-accent">{u.code}</td>
                                 <td>{u.name}</td>
-                                <td className="font-mono text-xs text-vscode-text-muted">{u.id}</td>
                             </tr>
                         ))}
                         {!isLoading && filteredUoms.length === 0 && (

@@ -28,14 +28,15 @@ import {
     percentVariance,
     roundMoney,
     toDecimal,
+    toId,
 } from '../erp.js';
 
-function requireUserId(req: AuthRequest): string {
+function requireUserId(req: AuthRequest): number {
     if (!req.user?.id) throw new Error('Authenticated user is required');
     return req.user.id;
 }
 
-async function getActiveItemsByIds(itemIds: string[]) {
+async function getActiveItemsByIds(itemIds: number[]) {
     if (itemIds.length === 0) return [];
     return db.select().from(items).where(inArray(items.id, itemIds));
 }
@@ -76,7 +77,7 @@ export const getPRs = async (_req: AuthRequest, res: Response) => {
         });
 
         const enriched = result.map((pr) => {
-            const sourcedByItem = new Map<string, number>();
+            const sourcedByItem = new Map<number, number>();
             for (const po of pr.purchaseOrders || []) {
                 for (const line of po.poItems || []) {
                     sourcedByItem.set(line.itemId, roundMoney((sourcedByItem.get(line.itemId) || 0) + toDecimal(line.orderedQty)));
@@ -101,10 +102,9 @@ export const getPRs = async (_req: AuthRequest, res: Response) => {
 };
 
 export const getPR = async (req: AuthRequest, res: Response) => {
-    const { id } = req.params;
     try {
         const result = await db.query.purchaseRequisitions.findFirst({
-            where: eq(purchaseRequisitions.id, id as string),
+            where: eq(purchaseRequisitions.id, toId(String(req.params.id), 'purchase requisition id')),
             with: {
                 prItems: { with: { item: true } },
                 requestor: true,
@@ -113,7 +113,7 @@ export const getPR = async (req: AuthRequest, res: Response) => {
         });
         if (!result) return res.status(404).json({ message: 'PR not found' });
 
-        const sourcedByItem = new Map<string, number>();
+        const sourcedByItem = new Map<number, number>();
         for (const po of result.purchaseOrders || []) {
             for (const line of po.poItems || []) {
                 sourcedByItem.set(line.itemId, roundMoney((sourcedByItem.get(line.itemId) || 0) + toDecimal(line.orderedQty)));
@@ -146,12 +146,12 @@ export const createPR = async (req: AuthRequest, res: Response) => {
     const initialStatus = status === 'Submitted' ? 'Submitted' : 'Draft';
 
     try {
-        const itemIds = [...new Set(requestItems.map((item: any) => item.itemId).filter(Boolean))];
+        const itemIds = [...new Set(requestItems.map((item: any) => toId(item.itemId, 'item id')).filter(Boolean))];
         const masterItems = await getActiveItemsByIds(itemIds);
         const itemMap = new Map(masterItems.map((item) => [item.id, item]));
 
         for (const line of requestItems) {
-            const masterItem = itemMap.get(line.itemId);
+            const masterItem = itemMap.get(toId(line.itemId, 'item id'));
             if (!masterItem) return res.status(400).json({ message: `Invalid item ${line.itemId}` });
             if (!masterItem.active) return res.status(400).json({ message: `Item ${masterItem.code} is inactive and cannot be used in a new PR` });
             if (toDecimal(line.quantity) <= 0) return res.status(400).json({ message: 'PR quantity must be greater than zero' });
@@ -162,7 +162,7 @@ export const createPR = async (req: AuthRequest, res: Response) => {
             const [pr] = await tx.insert(purchaseRequisitions).values({
                 ...prData,
                 prNo,
-                requestorId: prData.requestorId || userId,
+                requestorId: prData.requestorId ? toId(prData.requestorId, 'requestor id') : userId,
                 status: initialStatus,
                 submittedAt: initialStatus === 'Submitted' ? new Date() : null,
             }).returning();
@@ -170,7 +170,7 @@ export const createPR = async (req: AuthRequest, res: Response) => {
             const insertedLines = await tx.insert(prItems).values(
                 requestItems.map((item: any) => ({
                     prId: pr.id,
-                    itemId: item.itemId,
+                    itemId: toId(item.itemId, 'item id'),
                     quantity: Number(item.quantity).toFixed(2),
                     requiredDate: item.requiredDate,
                 })),
@@ -199,12 +199,11 @@ export const createPR = async (req: AuthRequest, res: Response) => {
 
 export const updatePRStatus = async (req: AuthRequest, res: Response) => {
     const userId = requireUserId(req);
-    const { id } = req.params;
     const { status, rejectionReason } = req.body;
 
     try {
         const pr = await db.query.purchaseRequisitions.findFirst({
-            where: eq(purchaseRequisitions.id, id as string),
+            where: eq(purchaseRequisitions.id, toId(String(req.params.id), 'purchase requisition id')),
             with: { prItems: true, purchaseOrders: true },
         });
         if (!pr) return res.status(404).json({ message: 'PR not found' });
@@ -297,16 +296,18 @@ export const createRFQ = async (req: AuthRequest, res: Response) => {
     const { vendorIds = [], ...rfqData } = req.body;
 
     try {
+        const normalizedPrId = toId(rfqData.prId, 'purchase requisition id');
+        const normalizedVendorIds = vendorIds.map((vendorId: unknown) => toId(vendorId as string | number, 'vendor id'));
         const pr = await db.query.purchaseRequisitions.findFirst({
-            where: eq(purchaseRequisitions.id, rfqData.prId as string),
+            where: eq(purchaseRequisitions.id, normalizedPrId),
             with: { prItems: true },
         });
         if (!pr) return res.status(404).json({ message: 'PR not found' });
         if (pr.status !== 'Approved') return res.status(400).json({ message: 'Only approved PRs can move to RFQ' });
         if (!Array.isArray(vendorIds) || vendorIds.length === 0) return res.status(400).json({ message: 'Select at least one vendor' });
 
-        const invitedVendors = await db.select().from(vendors).where(inArray(vendors.id, vendorIds));
-        if (invitedVendors.length !== vendorIds.length) return res.status(400).json({ message: 'One or more selected vendors are invalid' });
+        const invitedVendors = await db.select().from(vendors).where(inArray(vendors.id, normalizedVendorIds));
+        if (invitedVendors.length !== normalizedVendorIds.length) return res.status(400).json({ message: 'One or more selected vendors are invalid' });
         if (invitedVendors.some((vendor) => !vendor.active)) return res.status(400).json({ message: 'Inactive vendors cannot be invited to RFQ' });
 
         const newRFQ = await db.transaction(async (tx) => {
@@ -317,7 +318,7 @@ export const createRFQ = async (req: AuthRequest, res: Response) => {
                 status: 'Created',
             }).returning();
 
-            await tx.insert(rfqVendors).values(vendorIds.map((vendorId: string) => ({ rfqId: rfq.id, vendorId })));
+            await tx.insert(rfqVendors).values(normalizedVendorIds.map((vendorId: number) => ({ rfqId: rfq.id, vendorId })));
 
             await logActivity(tx, {
                 userId,
@@ -326,7 +327,7 @@ export const createRFQ = async (req: AuthRequest, res: Response) => {
                 module: 'Procurement',
                 entityType: 'RFQ',
                 entityId: rfq.id,
-                payload: { prId: pr.id, vendorIds },
+                payload: { prId: pr.id, vendorIds: normalizedVendorIds },
             });
 
             return rfq;
@@ -364,8 +365,10 @@ export const submitQuote = async (req: AuthRequest, res: Response) => {
     }
 
     try {
+        const normalizedRfqId = toId(quoteData.rfqId, 'rfq id');
+        const normalizedVendorId = toId(quoteData.vendorId, 'vendor id');
         const rfq = await db.query.rfqs.findFirst({
-            where: eq(rfqs.id, quoteData.rfqId as string),
+            where: eq(rfqs.id, normalizedRfqId),
             with: {
                 purchaseRequisition: { with: { prItems: true } },
                 rfqVendors: true,
@@ -373,11 +376,11 @@ export const submitQuote = async (req: AuthRequest, res: Response) => {
         });
         if (!rfq) return res.status(404).json({ message: 'RFQ not found' });
         if (rfq.status === 'Closed') return res.status(400).json({ message: 'RFQ is already closed' });
-        if (!(rfq.rfqVendors || []).some((row) => row.vendorId === quoteData.vendorId)) {
+        if (!(rfq.rfqVendors || []).some((row) => row.vendorId === normalizedVendorId)) {
             return res.status(400).json({ message: 'Vendor is not invited on this RFQ' });
         }
 
-        const itemIds = [...new Set(submittedItems.map((item: any) => item.itemId))];
+        const itemIds = [...new Set(submittedItems.map((item: any) => toId(item.itemId, 'item id')))];
         const masterItems = await getActiveItemsByIds(itemIds);
         const itemMap = new Map(masterItems.map((item) => [item.id, item]));
 
@@ -385,7 +388,8 @@ export const submitQuote = async (req: AuthRequest, res: Response) => {
         let taxAmount = 0;
 
         const preparedLines = submittedItems.map((line: any) => {
-            const item = itemMap.get(line.itemId);
+            const normalizedItemId = toId(line.itemId, 'item id');
+            const item = itemMap.get(normalizedItemId);
             if (!item) throw new Error(`Invalid item ${line.itemId}`);
             const qty = toDecimal(line.qty ?? line.quantity);
             const unitPrice = toDecimal(line.unitPrice);
@@ -397,7 +401,7 @@ export const submitQuote = async (req: AuthRequest, res: Response) => {
             taxAmount = roundMoney(taxAmount + amounts.taxAmount);
 
             return {
-                itemId: line.itemId,
+                itemId: normalizedItemId,
                 qty: qty.toFixed(2),
                 unitPrice: unitPrice.toFixed(2),
                 taxRate: taxRate.toFixed(2),
@@ -413,6 +417,8 @@ export const submitQuote = async (req: AuthRequest, res: Response) => {
         const newQuote = await db.transaction(async (tx) => {
             const [quote] = await tx.insert(quotations).values({
                 ...quoteData,
+                rfqId: normalizedRfqId,
+                vendorId: normalizedVendorId,
                 currency: quoteData.currency || 'AED',
                 baseAmount: baseAmount.toFixed(2),
                 taxAmount: taxAmount.toFixed(2),
@@ -450,11 +456,10 @@ export const submitQuote = async (req: AuthRequest, res: Response) => {
 
 export const updateQuoteStatus = async (req: AuthRequest, res: Response) => {
     const userId = requireUserId(req);
-    const { id } = req.params;
     const { status } = req.body;
 
     try {
-        const quote = await db.query.quotations.findFirst({ where: eq(quotations.id, id as string) });
+        const quote = await db.query.quotations.findFirst({ where: eq(quotations.id, toId(String(req.params.id), 'quotation id')) });
         if (!quote) return res.status(404).json({ message: 'Quotation not found' });
         if (!['Pending', 'Accepted', 'Rejected'].includes(status)) return res.status(400).json({ message: 'Invalid quotation status' });
         if (quote.status === status) return res.json({ message: 'Quote status unchanged' });
@@ -515,14 +520,17 @@ export const createPO = async (req: AuthRequest, res: Response) => {
     }
 
     try {
-        const vendor = await db.query.vendors.findFirst({ where: eq(vendors.id, vendorId as string) });
+        const normalizedVendorId = toId(vendorId, 'vendor id');
+        const normalizedPrId = prId ? toId(prId, 'purchase requisition id') : null;
+        const normalizedRfqId = rfqId ? toId(rfqId, 'rfq id') : null;
+        const vendor = await db.query.vendors.findFirst({ where: eq(vendors.id, normalizedVendorId) });
         if (!vendor) return res.status(404).json({ message: 'Vendor not found' });
         if (!vendor.active) return res.status(400).json({ message: 'Inactive vendor cannot be used for PO creation' });
 
         let pr: any = null;
-        if (prId) {
+        if (normalizedPrId) {
             pr = await db.query.purchaseRequisitions.findFirst({
-                where: eq(purchaseRequisitions.id, prId as string),
+                where: eq(purchaseRequisitions.id, normalizedPrId),
                 with: { prItems: true },
             });
             if (!pr) return res.status(404).json({ message: 'PR not found' });
@@ -530,10 +538,10 @@ export const createPO = async (req: AuthRequest, res: Response) => {
         }
 
         const settings = await db.transaction((tx) => getSettings(tx));
-        const itemIds = [...new Set(requestItems.map((item: any) => item.itemId).filter(Boolean))];
+        const itemIds = [...new Set(requestItems.map((item: any) => toId(item.itemId, 'item id')).filter(Boolean))];
         const masterItems = await getActiveItemsByIds(itemIds);
         const itemMap = new Map(masterItems.map((item) => [item.id, item]));
-        const prItemMap = new Map<string, any>((pr?.prItems || []).map((line: any) => [line.itemId, line]));
+        const prItemMap = new Map<number, any>((pr?.prItems || []).map((line: any) => [line.itemId, line]));
 
         let baseAmount = 0;
         let taxAmount = 0;
@@ -541,7 +549,8 @@ export const createPO = async (req: AuthRequest, res: Response) => {
         let maxVariancePct = 0;
 
         const preparedLines = requestItems.map((line: any) => {
-            const item = itemMap.get(line.itemId);
+            const normalizedItemId = toId(line.itemId, 'item id');
+            const item = itemMap.get(normalizedItemId);
             if (!item) throw new Error(`Invalid item ${line.itemId}`);
             if (!item.active) throw new Error(`Inactive item ${item.code} cannot be used on a new PO`);
 
@@ -549,7 +558,7 @@ export const createPO = async (req: AuthRequest, res: Response) => {
             const unitPrice = toDecimal(line.unitPrice);
             if (orderedQty <= 0) throw new Error('PO quantity must be greater than zero');
 
-            const prLine = prItemMap.get(line.itemId);
+            const prLine = prItemMap.get(normalizedItemId);
             if (prLine) {
                 const requestedQty = toDecimal(prLine.quantity);
                 enforceTolerance(orderedQty, requestedQty, settings.qtyTolerancePct, `PO quantity for item ${item.code}`, settings.warnOnlyOnTolerance);
@@ -565,7 +574,7 @@ export const createPO = async (req: AuthRequest, res: Response) => {
             taxAmount = roundMoney(taxAmount + amounts.taxAmount);
 
             return {
-                itemId: line.itemId,
+                itemId: normalizedItemId,
                 orderedQty: orderedQty.toFixed(2),
                 unitPrice: unitPrice.toFixed(2),
                 taxRate: taxRate.toFixed(2),
@@ -582,9 +591,9 @@ export const createPO = async (req: AuthRequest, res: Response) => {
             const poNo = await generateDocumentNo(tx, 'PO', new Date(deliveryDate || new Date()));
             const [po] = await tx.insert(purchaseOrders).values({
                 ...poData,
-                prId,
-                rfqId,
-                vendorId,
+                prId: normalizedPrId,
+                rfqId: normalizedRfqId,
+                vendorId: normalizedVendorId,
                 poNo,
                 deliveryDate: deliveryDate ? new Date(deliveryDate) : null,
                 currency: poData.currency || 'AED',
@@ -609,7 +618,7 @@ export const createPO = async (req: AuthRequest, res: Response) => {
                 entityType: 'PurchaseOrder',
                 entityId: po.id,
                 afterData: { ...po, poItems: insertedLines },
-                payload: { prId, vendorId, totalAmount, varianceAlert, rfqId },
+                payload: { prId: normalizedPrId, vendorId: normalizedVendorId, totalAmount, varianceAlert, rfqId: normalizedRfqId },
             });
 
             return po;
@@ -624,12 +633,11 @@ export const createPO = async (req: AuthRequest, res: Response) => {
 
 export const updatePOStatus = async (req: AuthRequest, res: Response) => {
     const userId = requireUserId(req);
-    const { id } = req.params;
     const { status } = req.body;
 
     try {
         const po = await db.query.purchaseOrders.findFirst({
-            where: eq(purchaseOrders.id, id as string),
+            where: eq(purchaseOrders.id, toId(String(req.params.id), 'purchase order id')),
             with: { poItems: true },
         });
         if (!po) return res.status(404).json({ message: 'PO not found' });

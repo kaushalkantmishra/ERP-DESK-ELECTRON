@@ -22,9 +22,10 @@ import {
     percentVariance,
     roundMoney,
     toDecimal,
+    toId,
 } from '../erp.js';
 
-function requireUserId(req: AuthRequest): string {
+function requireUserId(req: AuthRequest): number {
     if (!req.user?.id) throw new Error('Authenticated user is required');
     return req.user.id;
 }
@@ -59,6 +60,29 @@ export const getInvoices = async (_req: AuthRequest, res: Response) => {
     }
 };
 
+export const getInvoiceById = async (req: AuthRequest, res: Response) => {
+    try {
+        const invoice = await db.query.invoices.findFirst({
+            where: eq(invoices.id, toId(String(req.params.id), 'invoice id')),
+            with: {
+                vendor: true,
+                po: { with: { poItems: { with: { item: true } } } },
+                invoiceLines: { with: { item: true, poItem: true } },
+                paymentAllocations: { with: { invoice: true } },
+            },
+        });
+
+        if (!invoice) {
+            return res.status(404).json({ message: 'Invoice not found' });
+        }
+
+        res.json(enrichInvoice(invoice));
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ message: 'Error fetching invoice' });
+    }
+};
+
 export const createInvoice = async (req: AuthRequest, res: Response) => {
     const userId = requireUserId(req);
     const { lines, poId, vendorId, amount, ...invoiceData } = req.body;
@@ -68,12 +92,14 @@ export const createInvoice = async (req: AuthRequest, res: Response) => {
     }
 
     try {
+        const normalizedPoId = toId(poId, 'purchase order id');
+        const normalizedVendorId = toId(vendorId, 'vendor id');
         const po = await db.query.purchaseOrders.findFirst({
-            where: eq(purchaseOrders.id, poId as string),
+            where: eq(purchaseOrders.id, normalizedPoId),
             with: { poItems: { with: { item: true } }, grns: true },
         });
         if (!po) return res.status(404).json({ message: 'PO not found' });
-        if (po.vendorId !== vendorId) return res.status(400).json({ message: 'Invoice vendor must match PO vendor' });
+        if (po.vendorId !== normalizedVendorId) return res.status(400).json({ message: 'Invoice vendor must match PO vendor' });
         if (!['Partially Received', 'Fully Received', 'Closed'].includes(po.status)) {
             return res.status(400).json({ message: 'Invoice can only be entered after goods receipt activity has started' });
         }
@@ -89,7 +115,8 @@ export const createInvoice = async (req: AuthRequest, res: Response) => {
         let taxAmount = 0;
 
         const preparedLines = lines.map((line: any) => {
-            const poLine = poItemMap.get(line.poItemId);
+            const normalizedPoItemId = toId(line.poItemId, 'purchase order item id');
+            const poLine = poItemMap.get(normalizedPoItemId);
             if (!poLine) throw new Error('Invoice line references an invalid PO line');
 
             const lineQty = toDecimal(line.quantity);
@@ -136,8 +163,8 @@ export const createInvoice = async (req: AuthRequest, res: Response) => {
                 ...invoiceData,
                 invoiceNo,
                 vendorInvoiceNo: invoiceData.vendorInvoiceNo || invoiceNo,
-                poId,
-                vendorId,
+                poId: normalizedPoId,
+                vendorId: normalizedVendorId,
                 currency: invoiceData.currency || 'AED',
                 baseAmount: baseAmount.toFixed(2),
                 taxAmount: taxAmount.toFixed(2),
@@ -172,7 +199,7 @@ export const createInvoice = async (req: AuthRequest, res: Response) => {
                 entityType: 'Invoice',
                 entityId: invoice.id,
                 afterData: { ...invoice, invoiceLines: insertedLines },
-                payload: { poId, vendorId, amount: requestedAmount, matchWarnings },
+                payload: { poId: normalizedPoId, vendorId: normalizedVendorId, amount: requestedAmount, matchWarnings },
             });
 
             return invoice;
@@ -187,12 +214,11 @@ export const createInvoice = async (req: AuthRequest, res: Response) => {
 
 export const updateInvoiceStatus = async (req: AuthRequest, res: Response) => {
     const userId = requireUserId(req);
-    const { id } = req.params;
     const { status } = req.body;
 
     try {
         const invoice = await db.query.invoices.findFirst({
-            where: eq(invoices.id, id as string),
+            where: eq(invoices.id, toId(String(req.params.id), 'invoice id')),
             with: { invoiceLines: true },
         });
         if (!invoice) return res.status(404).json({ message: 'Invoice not found' });
@@ -271,13 +297,14 @@ export const createPayment = async (req: AuthRequest, res: Response) => {
         if (paymentAmount !== allocationTotal) {
             return res.status(400).json({ message: 'Payment amount must equal allocation total' });
         }
+        const normalizedVendorId = toId(vendorId, 'vendor id');
 
         const newPayment = await db.transaction(async (tx) => {
             const paymentNo = await generateDocumentNo(tx, 'PAY', new Date(paymentData.paymentDate || new Date()));
             const [payment] = await tx.insert(payments).values({
                 ...paymentData,
                 paymentNo,
-                vendorId,
+                vendorId: normalizedVendorId,
                 baseAmount: paymentAmount.toFixed(2),
                 taxAmount: '0.00',
                 totalAmount: paymentAmount.toFixed(2),
@@ -291,7 +318,7 @@ export const createPayment = async (req: AuthRequest, res: Response) => {
 
             for (const allocation of allocations) {
                 const invoice = await tx.query.invoices.findFirst({
-                    where: and(eq(invoices.id, allocation.invoiceId), eq(invoices.vendorId, vendorId)),
+                    where: and(eq(invoices.id, toId(allocation.invoiceId, 'invoice id')), eq(invoices.vendorId, normalizedVendorId)),
                     with: { invoiceLines: true },
                 });
                 if (!invoice) throw new Error('Allocation references an invalid invoice for this vendor');
@@ -337,7 +364,7 @@ export const createPayment = async (req: AuthRequest, res: Response) => {
                 entityType: 'Payment',
                 entityId: payment.id,
                 afterData: payment,
-                payload: { vendorId, amount: paymentAmount },
+                payload: { vendorId: normalizedVendorId, amount: paymentAmount },
             });
 
             return payment;

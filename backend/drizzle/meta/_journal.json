@@ -5,22 +5,15 @@
     {
       "idx": 0,
       "version": "7",
-      "when": 1773388787503,
-      "tag": "0000_slimy_stepford_cuckoos",
+      "when": 1774249481695,
+      "tag": "0000_calm_vulcan",
       "breakpoints": true
     },
     {
       "idx": 1,
       "version": "7",
-      "when": 1773837986049,
-      "tag": "0001_fast_redwing",
-      "breakpoints": true
-    },
-    {
-      "idx": 2,
-      "version": "7",
-      "when": 1773923053535,
-      "tag": "0002_magenta_power_pack",
+      "when": 1774249731833,
+      "tag": "0001_serious_thunderball",
       "breakpoints": true
     }
   ]

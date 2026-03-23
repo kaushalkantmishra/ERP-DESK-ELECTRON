@@ -6,12 +6,12 @@ type AnyTx = any;
 export async function logActivity(
     tx: AnyTx,
     params: {
-        userId?: string;
+        userId?: number;
         action: string;
         description: string;
         module: string;
         entityType?: string;
-        entityId?: string;
+        entityId?: number;
         payload?: unknown;
         beforeData?: unknown;
         afterData?: unknown;

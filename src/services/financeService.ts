@@ -6,6 +6,10 @@ export const financeService = {
         const response = await api.get('/finance/invoices');
         return response.data;
     },
+    getInvoice: async (id: string): Promise<Invoice> => {
+        const response = await api.get(`/finance/invoice/${id}`);
+        return response.data;
+    },
     createInvoice: async (invoice: any): Promise<Invoice> => {
         const response = await api.post('/finance/invoice', invoice);
         return response.data;

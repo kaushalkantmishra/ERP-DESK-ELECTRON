@@ -4,6 +4,7 @@ import {
     Warehouse, Category, Uom, ActivityLog
 } from '../types/models';
 import { authService } from '../services/authService';
+import { hasValidStoredToken, setAuthFailureHandler } from '../services/api';
 import { masterService } from '../services/masterService';
 import { systemService } from '../services/systemService';
 
@@ -29,11 +30,12 @@ const AppContext = createContext<AppContextType | undefined>(undefined);
 
 export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
     const [currentUser, setCurrentUser] = useState<User | null>(() => {
+        if (!hasValidStoredToken()) return null;
         const savedUser = localStorage.getItem('user');
         return savedUser ? JSON.parse(savedUser) : null;
     });
     const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
-        return !!localStorage.getItem('token');
+        return hasValidStoredToken();
     });
 
     const [items, setItems] = useState<Item[]>([]);
@@ -71,6 +73,21 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
             refreshMasterData();
         }
     }, [isAuthenticated, refreshMasterData]);
+
+    useEffect(() => {
+        const handleAuthFailure = () => {
+            setCurrentUser(null);
+            setIsAuthenticated(false);
+            setItems([]);
+            setVendors([]);
+            setWarehouses([]);
+            setCategories([]);
+            setUoms([]);
+        };
+
+        setAuthFailureHandler(handleAuthFailure);
+        return () => setAuthFailureHandler(null);
+    }, []);
 
     const login = async (email: string, pass: string): Promise<boolean> => {
         const user = await authService.login(email, pass);

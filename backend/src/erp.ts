@@ -84,6 +84,14 @@ export function toDecimal(value: string | number | null | undefined): number {
     return parsed;
 }
 
+export function toId(value: string | number | null | undefined, field = 'id'): number {
+    const parsed = typeof value === 'number' ? value : Number(value);
+    if (!Number.isInteger(parsed) || parsed <= 0) {
+        throw new Error(`Invalid ${field}`);
+    }
+    return parsed;
+}
+
 export function roundMoney(value: number): number {
     return Number(value.toFixed(2));
 }
@@ -209,7 +217,7 @@ export async function optimisticVersionUpdate(
     tx: AnyTx,
     table: any,
     idColumn: any,
-    id: string,
+    id: number,
     currentVersion: number,
     patch: Record<string, unknown>,
 ) {

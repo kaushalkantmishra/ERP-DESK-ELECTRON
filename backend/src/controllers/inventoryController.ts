@@ -25,20 +25,21 @@ import {
     optimisticVersionUpdate,
     roundMoney,
     toDecimal,
+    toId,
 } from '../erp.js';
 
-function requireUserId(req: AuthRequest): string {
+function requireUserId(req: AuthRequest): number {
     if (!req.user?.id) throw new Error('Authenticated user is required');
     return req.user.id;
 }
 
-async function getStockLevel(tx: any, itemId: string, warehouseId: string) {
+async function getStockLevel(tx: any, itemId: number, warehouseId: number) {
     return tx.query.stockLevels.findFirst({
         where: and(eq(stockLevels.itemId, itemId), eq(stockLevels.warehouseId, warehouseId)),
     });
 }
 
-async function increaseStock(tx: any, itemId: string, warehouseId: string, qty: number, unitCost: number) {
+async function increaseStock(tx: any, itemId: number, warehouseId: number, qty: number, unitCost: number) {
     const current = await getStockLevel(tx, itemId, warehouseId);
     if (!current) {
         await tx.insert(stockLevels).values({
@@ -67,7 +68,7 @@ async function increaseStock(tx: any, itemId: string, warehouseId: string, qty: 
     return { quantity: nextQty, avgCost: nextAvg };
 }
 
-async function decreaseStock(tx: any, itemId: string, warehouseId: string, qty: number, allowNegativeStock: boolean) {
+async function decreaseStock(tx: any, itemId: number, warehouseId: number, qty: number, allowNegativeStock: boolean) {
     const current = await getStockLevel(tx, itemId, warehouseId);
     if (!current) throw new Error('Stock level not found for the selected warehouse');
 
@@ -86,7 +87,7 @@ async function decreaseStock(tx: any, itemId: string, warehouseId: string, qty: 
     return { quantity: nextQty, avgCost: toDecimal(current.avgCost) };
 }
 
-async function adjustReservation(tx: any, itemId: string, warehouseId: string | null, qtyDelta: number) {
+async function adjustReservation(tx: any, itemId: number, warehouseId: number | null, qtyDelta: number) {
     if (!warehouseId || qtyDelta === 0) return;
     const current = await getStockLevel(tx, itemId, warehouseId);
     if (!current) {
@@ -148,8 +149,10 @@ export const createGRN = async (req: AuthRequest, res: Response) => {
     }
 
     try {
+        const normalizedPoId = toId(poId, 'purchase order id');
+        const normalizedWarehouseId = toId(warehouseId, 'warehouse id');
         const po = await db.query.purchaseOrders.findFirst({
-            where: eq(purchaseOrders.id, poId as string),
+            where: eq(purchaseOrders.id, normalizedPoId),
             with: { poItems: { with: { item: true } } },
         });
         if (!po) return res.status(404).json({ message: 'PO not found' });
@@ -169,8 +172,8 @@ export const createGRN = async (req: AuthRequest, res: Response) => {
             const [grn] = await tx.insert(grns).values({
                 ...grnData,
                 grnNo,
-                poId,
-                warehouseId,
+                poId: normalizedPoId,
+                warehouseId: normalizedWarehouseId,
                 receivedBy: userId,
                 status: 'Posted',
                 postedAt: new Date(),
@@ -180,7 +183,7 @@ export const createGRN = async (req: AuthRequest, res: Response) => {
 
             for (let index = 0; index < receiptItems.length; index += 1) {
                 const line = receiptItems[index];
-                const poLine = poItemMap.get(line.poItemId);
+                const poLine = poItemMap.get(toId(line.poItemId, 'purchase order item id'));
                 if (!poLine) throw new Error(`PO line not found for ${line.poItemId}`);
 
                 const receivedQty = toDecimal(line.receivedQty);
@@ -224,17 +227,17 @@ export const createGRN = async (req: AuthRequest, res: Response) => {
                 }).where(eq(poItems.id, poLine.id));
 
                 if (acceptedQty > 0) {
-                    const stockState = await increaseStock(tx, poLine.itemId, warehouseId, acceptedQty, toDecimal(poLine.unitPrice));
+                    const stockState = await increaseStock(tx, poLine.itemId, normalizedWarehouseId, acceptedQty, toDecimal(poLine.unitPrice));
                     await createLedgerEntry(tx, {
                         itemId: poLine.itemId,
-                        warehouseId,
+                        warehouseId: normalizedWarehouseId,
                         type: 'Receipt',
                         quantity: acceptedQty.toFixed(2),
                         unitCost: toDecimal(poLine.unitPrice).toFixed(2),
                         referenceType: 'GRN',
                         referenceId: grn.id,
                         lineReferenceId: grnLine.id,
-                        targetWarehouseId: warehouseId,
+                        targetWarehouseId: normalizedWarehouseId,
                         performedBy: userId,
                         idempotencyKey: `${idempotencyKey || grnNo}-${index + 1}-receipt`,
                         notes: `GRN ${grnNo} posted at weighted average ${stockState.avgCost}`,
@@ -265,7 +268,7 @@ export const createGRN = async (req: AuthRequest, res: Response) => {
                 entityType: 'GRN',
                 entityId: grn.id,
                 afterData: { ...grn, baseAmount, taxAmount, totalAmount, warnings: updatedWarnings },
-                payload: { poId, warehouseId, warnings: updatedWarnings },
+                payload: { poId: normalizedPoId, warehouseId: normalizedWarehouseId, warnings: updatedWarnings },
             });
 
             return grn;
@@ -280,12 +283,11 @@ export const createGRN = async (req: AuthRequest, res: Response) => {
 
 export const reverseGRN = async (req: AuthRequest, res: Response) => {
     const userId = requireUserId(req);
-    const { id } = req.params;
     const { reason } = req.body;
 
     try {
         const grn = await db.query.grns.findFirst({
-            where: eq(grns.id, id as string),
+            where: eq(grns.id, toId(String(req.params.id), 'grn id')),
             with: { grnItems: { with: { poItem: true } }, po: { with: { poItems: true } } },
         });
         if (!grn) return res.status(404).json({ message: 'GRN not found' });
@@ -418,47 +420,51 @@ export const createStockTransaction = async (req: AuthRequest, res: Response) =>
         const qty = toDecimal(quantity);
         if (qty <= 0) return res.status(400).json({ message: 'Quantity must be greater than zero' });
         const settings = await db.transaction((tx) => getSettings(tx));
+        const normalizedItemId = toId(itemId, 'item id');
+        const normalizedWarehouseId = warehouseId ? toId(warehouseId, 'warehouse id') : null;
+        const normalizedSourceWarehouseId = sourceWarehouseId ? toId(sourceWarehouseId, 'source warehouse id') : null;
+        const normalizedTargetWarehouseId = targetWarehouseId ? toId(targetWarehouseId, 'target warehouse id') : null;
 
         const result = await db.transaction(async (tx) => {
-            const item = await tx.query.items.findFirst({ where: eq(items.id, itemId as string) });
+            const item = await tx.query.items.findFirst({ where: eq(items.id, normalizedItemId) });
             if (!item) throw new Error('Invalid item');
 
             let sourceCost = 0;
             if (type === 'Issue') {
-                if (!warehouseId) throw new Error('warehouseId is required for issue');
-                const source = await decreaseStock(tx, itemId, warehouseId, qty, settings.allowNegativeStock);
+                if (!normalizedWarehouseId) throw new Error('warehouseId is required for issue');
+                const source = await decreaseStock(tx, normalizedItemId, normalizedWarehouseId, qty, settings.allowNegativeStock);
                 sourceCost = source.avgCost;
             } else if (type === 'Receipt' || type === 'Adjustment+') {
-                if (!warehouseId) throw new Error('warehouseId is required for receipt/adjustment');
+                if (!normalizedWarehouseId) throw new Error('warehouseId is required for receipt/adjustment');
                 sourceCost = toDecimal(item.price);
-                await increaseStock(tx, itemId, warehouseId, qty, sourceCost);
+                await increaseStock(tx, normalizedItemId, normalizedWarehouseId, qty, sourceCost);
             } else if (type === 'Adjustment-') {
-                if (!warehouseId) throw new Error('warehouseId is required for negative adjustment');
-                const source = await decreaseStock(tx, itemId, warehouseId, qty, settings.allowNegativeStock);
+                if (!normalizedWarehouseId) throw new Error('warehouseId is required for negative adjustment');
+                const source = await decreaseStock(tx, normalizedItemId, normalizedWarehouseId, qty, settings.allowNegativeStock);
                 sourceCost = source.avgCost;
             } else if (type === 'Transfer') {
-                if (!sourceWarehouseId || !targetWarehouseId) throw new Error('sourceWarehouseId and targetWarehouseId are required for transfer');
-                if (sourceWarehouseId === targetWarehouseId) throw new Error('Source and target warehouse must be different');
-                const source = await decreaseStock(tx, itemId, sourceWarehouseId, qty, settings.allowNegativeStock);
+                if (!normalizedSourceWarehouseId || !normalizedTargetWarehouseId) throw new Error('sourceWarehouseId and targetWarehouseId are required for transfer');
+                if (normalizedSourceWarehouseId === normalizedTargetWarehouseId) throw new Error('Source and target warehouse must be different');
+                const source = await decreaseStock(tx, normalizedItemId, normalizedSourceWarehouseId, qty, settings.allowNegativeStock);
                 sourceCost = source.avgCost;
-                await increaseStock(tx, itemId, targetWarehouseId, qty, sourceCost);
+                await increaseStock(tx, normalizedItemId, normalizedTargetWarehouseId, qty, sourceCost);
             } else {
                 throw new Error('Unsupported stock movement type');
             }
 
             const transaction = await createLedgerEntry(tx, {
-                itemId,
-                warehouseId: warehouseId || sourceWarehouseId || targetWarehouseId,
+                itemId: normalizedItemId,
+                warehouseId: normalizedWarehouseId || normalizedSourceWarehouseId || normalizedTargetWarehouseId,
                 type,
                 quantity: qty.toFixed(2),
                 unitCost: sourceCost.toFixed(2),
                 referenceType,
                 referenceId,
-                sourceWarehouseId,
-                targetWarehouseId,
+                sourceWarehouseId: normalizedSourceWarehouseId,
+                targetWarehouseId: normalizedTargetWarehouseId,
                 notes,
                 performedBy: userId,
-                idempotencyKey: idempotencyKey || `stock-${itemId}-${Date.now()}`,
+                idempotencyKey: idempotencyKey || `stock-${normalizedItemId}-${Date.now()}`,
             });
 
             await logActivity(tx, {
@@ -469,7 +475,7 @@ export const createStockTransaction = async (req: AuthRequest, res: Response) =>
                 entityType: 'StockTransaction',
                 entityId: transaction.id,
                 afterData: transaction,
-                payload: { itemId, type, quantity: qty },
+                payload: { itemId: normalizedItemId, type, quantity: qty },
             });
 
             return transaction;
@@ -506,7 +512,7 @@ export const createMaterialRequest = async (req: AuthRequest, res: Response) => 
     }
 
     try {
-        const itemIds = [...new Set(requestItems.map((item: any) => item.itemId))];
+        const itemIds = [...new Set(requestItems.map((item: any) => toId(item.itemId, 'item id')))];
         const validItems = await db.select().from(items).where(inArray(items.id, itemIds));
         if (validItems.length !== itemIds.length) return res.status(400).json({ message: 'One or more material request items are invalid' });
 
@@ -520,15 +526,16 @@ export const createMaterialRequest = async (req: AuthRequest, res: Response) => 
             const insertedLines = await tx.insert(materialRequestItems).values(
                 requestItems.map((item: any) => ({
                     mrId: mr.id,
-                    itemId: item.itemId,
+                    itemId: toId(item.itemId, 'item id'),
                     quantity: Number(item.quantity).toFixed(2),
                 })),
             ).returning();
 
             if (warehouseId) {
+                const normalizedWarehouseId = toId(warehouseId, 'warehouse id');
                 await tx.insert(stockReservations).values(insertedLines.map((line: any) => ({
                     itemId: line.itemId,
-                    warehouseId,
+                    warehouseId: normalizedWarehouseId,
                     sourceType: 'MaterialRequest',
                     sourceId: mr.id,
                     sourceLineId: line.id,
@@ -536,7 +543,7 @@ export const createMaterialRequest = async (req: AuthRequest, res: Response) => 
                 })));
 
                 for (const line of insertedLines) {
-                    await adjustReservation(tx, line.itemId, warehouseId, toDecimal(line.quantity));
+                    await adjustReservation(tx, line.itemId, normalizedWarehouseId, toDecimal(line.quantity));
                 }
             }
 

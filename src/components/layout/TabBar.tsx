@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { X } from 'lucide-react';
 import { Tab } from '../../App';
@@ -12,6 +12,7 @@ interface TabBarProps {
 
 const TabBar: React.FC<TabBarProps> = ({ tabs, activeTabId, onTabClick, onTabClose }) => {
     const navigate = useNavigate();
+    const tabBarRef = useRef<HTMLDivElement>(null);
 
     const handleTabClick = (tab: Tab) => {
         onTabClick(tab.id);
@@ -23,8 +24,23 @@ const TabBar: React.FC<TabBarProps> = ({ tabs, activeTabId, onTabClick, onTabClo
         onTabClose(tabId);
     };
 
+    const handleWheel = (e: React.WheelEvent<HTMLDivElement>) => {
+        const container = tabBarRef.current;
+
+        if (!container || Math.abs(e.deltaY) <= Math.abs(e.deltaX)) {
+            return;
+        }
+
+        e.preventDefault();
+        container.scrollLeft += e.deltaY;
+    };
+
     return (
-        <div className="tab-bar">
+        <div
+            ref={tabBarRef}
+            className="tab-bar"
+            onWheel={handleWheel}
+        >
             {tabs.map(tab => (
                 <div
                     key={tab.id}

@@ -22,6 +22,7 @@ import StockManagement from './pages/StockManagement';
 import StockTransfer from './pages/StockTransfer';
 import MaterialIssue from './pages/MaterialIssue';
 import VendorInvoice from './pages/VendorInvoice';
+import VendorInvoiceView from './pages/VendorInvoiceView';
 import VendorMaster from './pages/VendorMaster';
 import Reports from './pages/Reports';
 import AuditLog from './pages/AuditLog';
@@ -102,6 +103,7 @@ function App() {
                             <Route path="/inventory/issue" element={<MaterialIssue />} />
                             <Route path="/inventory/grn" element={<GoodsReceipt />} />
                             <Route path="/finance/invoices" element={<VendorInvoice />} />
+                            <Route path="/finance/invoices/:id" element={<VendorInvoiceView />} />
                             <Route path="/finance/payments" element={<Payments />} />
                             <Route path="/reports" element={<Reports />} />
                             <Route path="/audit-log" element={<AuditLog />} />

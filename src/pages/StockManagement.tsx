@@ -60,10 +60,14 @@ const StockManagement: React.FC = () => {
         }
     }
 
+    const getItemForLevel = (level: StockLevel) => level.item || items.find((entry) => String(entry.id) === String(level.itemId));
+    const getWarehouseForLevel = (level: StockLevel) => level.warehouse || warehouses.find((entry) => String(entry.id) === String(level.warehouseId));
+
     const filteredLevels = stockLevels.filter((level) => {
-        const item = items.find((entry) => entry.id === level.itemId);
+        const item = getItemForLevel(level);
+        const warehouse = getWarehouseForLevel(level);
         const itemNameMatch = item ? `${item.code} ${item.name}`.toLowerCase().includes(filterItem.toLowerCase()) : true;
-        const warehouseMatch = filterWarehouse ? level.warehouseId === filterWarehouse : true;
+        const warehouseMatch = filterWarehouse ? String(warehouse?.id || level.warehouseId) === filterWarehouse : true;
         return itemNameMatch && warehouseMatch;
     });
 
@@ -81,7 +85,7 @@ const StockManagement: React.FC = () => {
                     <Search size={14} className="text-vscode-text-muted" />
                     <input type="text" placeholder="Search item" className="input-vscode flex-1" value={filterItem} onChange={(e) => setFilterItem(e.target.value)} />
                 </div>
-                <select className="input-vscode pl-2 pr-4 bg-transparent" value={filterWarehouse} onChange={(e) => setFilterWarehouse(e.target.value)}>
+                <select className="input-vscode pl-2 pr-8 min-w-[12rem]" value={filterWarehouse} onChange={(e) => setFilterWarehouse(e.target.value)}>
                     <option value="">All Warehouses</option>
                     {warehouses.map((warehouse) => <option key={warehouse.id} value={warehouse.id}>{warehouse.name}</option>)}
                 </select>
@@ -101,20 +105,25 @@ const StockManagement: React.FC = () => {
                     </thead>
                     <tbody>
                         {filteredLevels.map((level, index) => {
-                            const item = items.find((entry) => entry.id === level.itemId);
-                            const warehouse = warehouses.find((entry) => entry.id === level.warehouseId);
+                            const item = getItemForLevel(level);
+                            const warehouse = getWarehouseForLevel(level);
                             const low = Number(level.quantity) <= Number(level.minStockLevel || item?.reorderLevel || 0);
                             return (
                                 <tr key={`${level.itemId}-${level.warehouseId}-${index}`}>
-                                    <td className="font-mono text-xs font-semibold">{item?.code}</td>
-                                    <td>{item?.name}</td>
-                                    <td>{warehouse?.name}</td>
-                                    <td className={`font-mono ${low ? 'text-status-error' : 'text-status-success'}`}>{Number(level.quantity).toFixed(2)} {item?.uom}</td>
+                                    <td className="font-mono text-xs font-semibold">{item?.code || '-'}</td>
+                                    <td>{item?.name || '-'}</td>
+                                    <td>{warehouse?.name || warehouse?.code || '-'}</td>
+                                    <td className={`font-mono ${low ? 'text-status-error' : 'text-status-success'}`}>{Number(level.quantity).toFixed(2)} {item?.uom || ''}</td>
                                     <td>{Number(level.minStockLevel || item?.reorderLevel || 0).toFixed(2)}</td>
                                     <td><button className="text-vscode-accent hover:underline text-xs" onClick={() => setAdjustingStock(level)}>Adjust</button></td>
                                 </tr>
                             );
                         })}
+                        {!isLoading && filteredLevels.length === 0 && (
+                            <tr>
+                                <td colSpan={6} className="p-4 text-center text-vscode-text-muted">No stock records found</td>
+                            </tr>
+                        )}
                     </tbody>
                 </table>
             </div>

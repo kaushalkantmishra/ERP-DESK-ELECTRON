@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { CheckCircle, Plus, Receipt } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import { financeService } from '../services/financeService';
 import { procurementService } from '../services/procurementService';
 import { Invoice, PurchaseOrder } from '../types/models';
@@ -12,6 +13,7 @@ interface DraftInvoiceLine {
 }
 
 const VendorInvoice: React.FC = () => {
+    const navigate = useNavigate();
     const [purchaseOrders, setPurchaseOrders] = useState<PurchaseOrder[]>([]);
     const [invoices, setInvoices] = useState<Invoice[]>([]);
     const [isLoading, setIsLoading] = useState(true);
@@ -257,6 +259,9 @@ const VendorInvoice: React.FC = () => {
                                             Approve
                                         </button>
                                         )}
+                                        <button className="text-xs text-vscode-accent hover:underline" onClick={() => navigate(`/finance/invoices/${invoice.id}`)}>
+                                            View
+                                        </button>
                                         {invoice.matchWarnings && invoice.matchWarnings.length > 0 && (
                                             <button className="text-xs text-status-warning hover:underline" onClick={() => alert(invoice.matchWarnings?.join('\n'))}>View Warnings</button>
                                         )}

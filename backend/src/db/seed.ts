@@ -50,11 +50,11 @@ async function seed() {
     ]).returning();
 
     const [electronics, office, rawMaterials, consumables, packaging] = await db.insert(schema.categories).values([
-        { name: 'Electronics', description: 'Systems, peripherals and hardware items' },
-        { name: 'Office Supplies', description: 'Stationery and desk consumables' },
-        { name: 'Raw Materials', description: 'Production input materials' },
-        { name: 'Consumables', description: 'Frequent-use maintenance and utility supplies' },
-        { name: 'Packaging', description: 'Labels, tapes and cartons' },
+        { name: 'Electronics', description: 'Systems, peripherals and hardware items', uom: pcs.code },
+        { name: 'Office Supplies', description: 'Stationery and desk consumables', uom: box.code },
+        { name: 'Raw Materials', description: 'Production input materials', uom: kg.code },
+        { name: 'Consumables', description: 'Frequent-use maintenance and utility supplies', uom: ltr.code },
+        { name: 'Packaging', description: 'Labels, tapes and cartons', uom: roll.code },
     ]).returning();
 
     const [admin, procurement, store, finance, department] = await db.insert(schema.users).values([
@@ -162,8 +162,8 @@ async function seed() {
     ]);
 
     await db.insert(schema.stockTransactions).values([
-        { itemId: itemByCode['ITM-LAP-15'].id, warehouseId: mainWarehouse.id, type: 'Receipt', quantity: '2.00', unitCost: '52000.00', referenceType: 'GRN', referenceId: grnPosted.id, targetWarehouseId: mainWarehouse.id, notes: 'Starter seed receipt for laptops', performedBy: store.id, idempotencyKey: 'seed-grn-laptop-1' },
-        { itemId: itemByCode['ITM-MON-24'].id, warehouseId: mainWarehouse.id, type: 'Receipt', quantity: '1.00', unitCost: '9800.00', referenceType: 'GRN', referenceId: grnPosted.id, targetWarehouseId: mainWarehouse.id, notes: 'Starter seed receipt for monitors', performedBy: store.id, idempotencyKey: 'seed-grn-monitor-1' },
+        { itemId: itemByCode['ITM-LAP-15'].id, warehouseId: mainWarehouse.id, type: 'Receipt', quantity: '2.00', unitCost: '52000.00', referenceType: 'GRN', referenceId: String(grnPosted.id), targetWarehouseId: mainWarehouse.id, notes: 'Starter seed receipt for laptops', performedBy: store.id, idempotencyKey: 'seed-grn-laptop-1' },
+        { itemId: itemByCode['ITM-MON-24'].id, warehouseId: mainWarehouse.id, type: 'Receipt', quantity: '1.00', unitCost: '9800.00', referenceType: 'GRN', referenceId: String(grnPosted.id), targetWarehouseId: mainWarehouse.id, notes: 'Starter seed receipt for monitors', performedBy: store.id, idempotencyKey: 'seed-grn-monitor-1' },
     ]);
 
     await db.update(schema.stockLevels).set({ quantity: '6.00', updatedAt: new Date(), versionNo: 2 }).where(eq(schema.stockLevels.itemId, itemByCode['ITM-LAP-15'].id));

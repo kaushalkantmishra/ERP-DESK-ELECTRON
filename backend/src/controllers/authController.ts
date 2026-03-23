@@ -5,6 +5,7 @@ import { eq } from 'drizzle-orm';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import dotenv from 'dotenv';
+import { toId } from '../erp.js';
 
 dotenv.config();
 
@@ -76,10 +77,10 @@ export const getUsers = async (req: Request, res: Response) => {
 };
 
 export const getUserById = async (req: Request, res: Response) => {
-    const { id } = req.params;
+    const userId = toId(String(req.params.id), 'user id');
     try {
         const user = await db.query.users.findFirst({
-            where: eq(users.id, id as string),
+            where: eq(users.id, userId),
         });
 
         if (!user) {

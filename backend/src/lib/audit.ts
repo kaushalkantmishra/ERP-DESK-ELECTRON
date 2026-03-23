@@ -5,7 +5,7 @@ interface TxLike {
     insert: (...args: any[]) => any;
     query: {
         users: {
-            findFirst: (args: any) => Promise<{ id: string; name: string } | undefined>;
+            findFirst: (args: any) => Promise<{ id: number; name: string } | undefined>;
         };
     };
 }
@@ -13,12 +13,12 @@ interface TxLike {
 export async function logActivity(
     tx: TxLike,
     params: {
-        userId?: string;
+        userId?: number;
         action: string;
         description: string;
         module: string;
         entityType?: string;
-        entityId?: string;
+        entityId?: number;
         payload?: unknown;
     },
 ) {

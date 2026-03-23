@@ -144,23 +144,21 @@ const CategoryMaster = () => {
                         <tr>
                             <th>Category Name</th>
                             <th>Description</th>
-                            <th>UOM</th>
-                            <th>ID</th>
+                            <th>Default UOM</th>
                         </tr>
                     </thead>
                     <tbody>
                         {isLoading ? (
-                            <tr><td colSpan={4} className="p-4 text-center text-vscode-text-muted">Loading categories...</td></tr>
+                            <tr><td colSpan={3} className="p-4 text-center text-vscode-text-muted">Loading categories...</td></tr>
                         ) : filteredCategories.map(cat => (
                             <tr key={cat.id} className="hover:bg-vscode-list-hover">
                                 <td className="font-semibold text-vscode-text">{cat.name}</td>
                                 <td className="text-vscode-text-muted">{cat.description}</td>
                                 <td className="text-vscode-text-muted">{cat.uom || '-'}</td>
-                                <td className="font-mono text-xs text-vscode-text-muted">{cat.id}</td>
                             </tr>
                         ))}
                         {!isLoading && filteredCategories.length === 0 && (
-                            <tr><td colSpan={4} className="p-4 text-center text-vscode-text-muted">No categories found</td></tr>
+                            <tr><td colSpan={3} className="p-4 text-center text-vscode-text-muted">No categories found</td></tr>
                         )}
                     </tbody>
                 </table>
