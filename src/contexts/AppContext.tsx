@@ -28,6 +28,10 @@ interface AppContextType {
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
+const getNumericUserId = (userId: string | undefined) => {
+    return userId && /^\d+$/.test(userId) ? Number(userId) : undefined;
+};
+
 export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
     const [currentUser, setCurrentUser] = useState<User | null>(() => {
         if (!hasValidStoredToken()) return null;
@@ -98,7 +102,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
                 action: 'Login',
                 description: `${user.name} logged in`,
                 module: 'Auth',
-                userId: user.id,
+                userId: getNumericUserId(user.id),
                 userName: user.name
             });
             return true;
@@ -125,7 +129,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
                 action,
                 description,
                 module,
-                userId: currentUser.id,
+                userId: getNumericUserId(currentUser.id),
                 userName: currentUser.name
             });
         } catch (error) {

@@ -144,6 +144,15 @@ export interface RFQ {
     dueDate: string;
     status: RFQStatus;
     vendorIds?: string[];
+    purchaseRequisition?: PurchaseRequisition;
+    rfqVendors?: { id?: string; vendorId: string; vendor?: Vendor }[];
+    quotations?: Quotation[];
+    emailSummary?: {
+        invitedCount: number;
+        sentCount: number;
+        failedCount: number;
+        failed: { vendorId: string | number; vendorName: string; reason?: string; sent: boolean; skipped: boolean }[];
+    };
 }
 
 export interface QuotationLine {
@@ -215,6 +224,8 @@ export interface PurchaseOrder {
     poItems: PurchaseOrderLine[];
     vendor?: Vendor;
     pr?: PurchaseRequisition;
+    grns?: GRN[];
+    invoices?: Invoice[];
 }
 
 export type GRNStatus = 'Draft' | 'Posted' | 'Reversed';
@@ -323,12 +334,12 @@ export interface Payment {
 
 export interface ActivityLog {
     id: string;
-    userId: string;
+    userId?: string | number;
     userName: string;
     action: string;
     description: string;
     entityType?: string;
-    entityId?: string;
+    entityId?: string | number;
     payload?: unknown;
     timestamp: string;
     module: 'Auth' | 'Procurement' | 'Inventory' | 'Finance' | 'System';

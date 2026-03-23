@@ -1,10 +1,12 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Download, Eye, PlusCircle, Send } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import { procurementService } from '../services/procurementService';
 import { masterService } from '../services/masterService';
 import { PurchaseOrder, PurchaseRequisition, Vendor } from '../types/models';
 
 const PurchaseOrderList: React.FC = () => {
+    const navigate = useNavigate();
     const [pos, setPos] = useState<PurchaseOrder[]>([]);
     const [prs, setPrs] = useState<PurchaseRequisition[]>([]);
     const [vendors, setVendors] = useState<Vendor[]>([]);
@@ -228,8 +230,8 @@ const PurchaseOrderList: React.FC = () => {
                                         )}
                                         <button
                                             className="text-vscode-accent hover:text-vscode-accent-hover p-1"
-                                            title="View lines"
-                                            onClick={() => alert((po.poItems || []).map((line) => `${line.item?.name || line.itemId}: ordered ${line.orderedQty}, received ${line.receivedQty}, open receipt ${Number(line.openReceiptQty ?? (Number(line.orderedQty) - Number(line.receivedQty) - Number(line.cancelledQty))).toFixed(2)}, variance ${Number(line.priceVariancePct || 0).toFixed(2)}%`).join('\n'))}
+                                            title="View purchase order"
+                                            onClick={() => navigate(`/procurement/purchase-order/${po.id}`)}
                                         >
                                             <Eye size={14} />
                                         </button>

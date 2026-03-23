@@ -5,6 +5,7 @@ import {
     createInvoice,
     updateInvoiceStatus,
     getPayments,
+    getPaymentById,
     createPayment,
 } from '../controllers/financeController.js';
 import { authMiddleware, roleMiddleware } from '../middleware/auth.js';
@@ -19,6 +20,7 @@ router.post('/invoice', roleMiddleware(['Admin', 'Finance']), createInvoice);
 router.patch('/invoice/:id/status', roleMiddleware(['Admin', 'Finance']), updateInvoiceStatus);
 
 router.get('/payments', getPayments);
+router.get('/payment/:id', getPaymentById);
 router.post('/payment', roleMiddleware(['Admin', 'Finance']), createPayment);
 
 export default router;

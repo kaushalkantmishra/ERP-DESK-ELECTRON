@@ -10,10 +10,13 @@ import TabBar from './components/layout/TabBar';
 import Dashboard from './pages/Dashboard';
 import PurchaseRequisitionList from './pages/PurchaseRequisitionList';
 import PurchaseRequisitionForm from './pages/PurchaseRequisitionForm';
+import PurchaseRequisitionView from './pages/PurchaseRequisitionView';
 import ItemMaster from './pages/ItemMaster';
 import RFQManager from './pages/RFQManager';
+import RFQView from './pages/RFQView';
 import Quotations from './pages/Quotations';
 import PurchaseOrderList from './pages/PurchaseOrderList';
+import PurchaseOrderView from './pages/PurchaseOrderView';
 import GoodsReceipt from './pages/GoodsReceipt';
 import Settings from './pages/Settings';
 import CategoryMaster from './pages/CategoryMaster';
@@ -29,6 +32,7 @@ import AuditLog from './pages/AuditLog';
 import UomMaster from './pages/UomMaster';
 import ApprovalMatrix from './pages/ApprovalMatrix';
 import Payments from './pages/Payments';
+import PaymentView from './pages/PaymentView';
 
 export interface Tab {
   id: string;
@@ -84,10 +88,13 @@ function App() {
                             <Route path="/dashboard" element={<Dashboard />} />
                             <Route path="/procurement/purchase-requisition" element={<PurchaseRequisitionList onNewPR={() => addTab({ id: 'new-pr', title: 'New Purchase Requisition', path: '/procurement/purchase-requisition/new', closable: true })} />} />
                             <Route path="/procurement/purchase-requisition/new" element={<PurchaseRequisitionForm />} />
+                            <Route path="/procurement/purchase-requisition/:id/view" element={<PurchaseRequisitionView />} />
                             <Route path="/procurement/purchase-requisition/:id" element={<PurchaseRequisitionForm />} />
                             <Route path="/procurement/rfq" element={<RFQManager />} />
+                            <Route path="/procurement/rfq/:id" element={<RFQView />} />
                             <Route path="/procurement/quotations" element={<Quotations />} />
                             <Route path="/procurement/purchase-order" element={<PurchaseOrderList />} />
+                            <Route path="/procurement/purchase-order/:id" element={<PurchaseOrderView />} />
                             <Route path="/procurement/grn" element={<GoodsReceipt />} />
                             <Route path="/procurement/vendors" element={<VendorMaster />} />
                             <Route path="/inventory/item-master" element={<ItemMaster />} />
@@ -105,6 +112,7 @@ function App() {
                             <Route path="/finance/invoices" element={<VendorInvoice />} />
                             <Route path="/finance/invoices/:id" element={<VendorInvoiceView />} />
                             <Route path="/finance/payments" element={<Payments />} />
+                            <Route path="/finance/payments/:id" element={<PaymentView />} />
                             <Route path="/reports" element={<Reports />} />
                             <Route path="/audit-log" element={<AuditLog />} />
                             <Route path="/settings" element={<Settings />} />

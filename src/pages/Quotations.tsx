@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
-import { Check, FileText } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { Check, FileText, Upload } from 'lucide-react';
 import { masterService } from '../services/masterService';
 import { procurementService } from '../services/procurementService';
 import { Item, Quotation, RFQ, Vendor } from '../types/models';
@@ -11,6 +11,7 @@ const Quotations: React.FC = () => {
     const [masterItems, setMasterItems] = useState<Item[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [selectedRFQId, setSelectedRFQId] = useState<string | null>(null);
+    const fileInputRef = useRef<HTMLInputElement | null>(null);
 
     useEffect(() => { void fetchData(); }, []);
 
@@ -61,6 +62,25 @@ const Quotations: React.FC = () => {
         }
     }
 
+    async function handleImportQuote(event: React.ChangeEvent<HTMLInputElement>) {
+        const file = event.target.files?.[0];
+        if (!file) return;
+
+        try {
+            setIsLoading(true);
+            const importedQuote = await procurementService.importQuote(file);
+            await fetchData();
+            setSelectedRFQId(String(importedQuote.rfqId));
+            alert('Quotation imported successfully.');
+        } catch (error: any) {
+            console.error(error);
+            alert(error?.response?.data?.message || 'Unable to import quotation file');
+        } finally {
+            event.target.value = '';
+            setIsLoading(false);
+        }
+    }
+
     return (
         <div className="flex flex-col h-full">
             <div className="text-xs text-vscode-text-muted px-4 pt-3 pb-2 flex items-center gap-2"><span>Procurement</span><span>/</span><span className="text-vscode-text">Quotations</span></div>
@@ -79,6 +99,29 @@ const Quotations: React.FC = () => {
                 </div>
                 <div className="flex-1 overflow-auto p-4 relative">
                     {isLoading && <div className="absolute inset-0 bg-vscode-bg/50 backdrop-blur-sm z-50 flex items-center justify-center"><div className="text-vscode-text-muted">Loading...</div></div>}
+                    <div className="flex items-center justify-between gap-3 mb-4">
+                        <div className="text-sm text-vscode-text-muted">
+                            {selectedRFQ ? `Import filled vendor quotation files for ${selectedRFQ.rfqNo}.` : 'Select an RFQ to compare or import quotations.'}
+                        </div>
+                        <div>
+                            <input
+                                ref={fileInputRef}
+                                type="file"
+                                accept=".xlsx"
+                                className="hidden"
+                                onChange={(event) => void handleImportQuote(event)}
+                            />
+                            <button
+                                type="button"
+                                disabled={!selectedRFQ || isLoading}
+                                onClick={() => fileInputRef.current?.click()}
+                                className="btn-secondary flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                                <Upload size={14} />
+                                <span>Import Quote</span>
+                            </button>
+                        </div>
+                    </div>
                     {selectedRFQ ? (
                         rfqQuotes.length > 0 ? (
                             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">

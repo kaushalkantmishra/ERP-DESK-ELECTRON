@@ -21,6 +21,10 @@ export const financeService = {
         const response = await api.get('/finance/payments');
         return response.data;
     },
+    getPayment: async (id: string): Promise<Payment> => {
+        const response = await api.get(`/finance/payment/${id}`);
+        return response.data;
+    },
     createPayment: async (payment: any): Promise<Payment> => {
         const response = await api.post('/finance/payment', payment);
         return response.data;

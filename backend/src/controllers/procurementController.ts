@@ -30,10 +30,70 @@ import {
     toDecimal,
     toId,
 } from '../erp.js';
+import { sendRfqInvitationEmail } from '../lib/mailer.js';
+import { buildQuotationTemplateWorkbook, parseQuotationTemplateWorkbook } from '../lib/quotationWorkbook.js';
 
-function requireUserId(req: AuthRequest): number {
+function requireUserId(req: AuthRequest): string | number {
     if (!req.user?.id) throw new Error('Authenticated user is required');
     return req.user.id;
+}
+
+function requireUserRole(req: AuthRequest): string {
+    if (!req.user?.role) throw new Error('Authenticated user role is required');
+    return req.user.role;
+}
+
+function canEditPR(pr: any) {
+    return ['Draft', 'Rejected'].includes(pr.status);
+}
+
+function assertPRActionAllowed(req: AuthRequest, pr: any, nextStatus?: string) {
+    const userId = requireUserId(req);
+    const role = requireUserRole(req);
+    const isOwner = String(pr.requestorId) === String(userId);
+    const isApprover = role === 'Admin' || role === 'Procurement';
+
+    if (!nextStatus) {
+        if (canEditPR(pr) && (isOwner || isApprover)) return;
+        throw new Error('You do not have permission to edit this requisition');
+    }
+
+    if (nextStatus === 'Submitted') {
+        if (canEditPR(pr) && (isOwner || isApprover)) return;
+        throw new Error('Only the request owner or procurement team can submit this requisition');
+    }
+
+    if (nextStatus === 'Approved' || nextStatus === 'Rejected' || nextStatus === 'Closed') {
+        if (isApprover) return;
+        throw new Error(`Only Admin or Procurement can move PR to ${nextStatus}`);
+    }
+
+    if (nextStatus === 'Cancelled') {
+        if (isApprover) return;
+    if (isOwner && ['Draft', 'Submitted', 'Rejected'].includes(pr.status)) return;
+        throw new Error('You do not have permission to cancel this requisition');
+    }
+}
+
+function getAuditUserId(req: AuthRequest): number | undefined {
+    const rawUserId = req.user?.id;
+    if (rawUserId === null || rawUserId === undefined || rawUserId === '') return undefined;
+
+    const numericUserId = typeof rawUserId === 'number' ? rawUserId : Number(rawUserId);
+    if (!Number.isInteger(numericUserId) || numericUserId <= 0) {
+        return undefined;
+    }
+
+    return numericUserId;
+}
+
+function toOptionalDate(value: unknown) {
+    if (value === null || value === undefined || value === '') return null;
+    const parsedDate = value instanceof Date ? value : new Date(String(value));
+    if (Number.isNaN(parsedDate.getTime())) {
+        throw new Error(`Invalid date value: ${value}`);
+    }
+    return parsedDate;
 }
 
 async function getActiveItemsByIds(itemIds: number[]) {
@@ -63,6 +123,118 @@ function enrichPOLines(po: any) {
         };
     });
     return { ...po, poItems: lines };
+}
+
+function enrichRFQ(rfq: any) {
+    return {
+        ...rfq,
+        rfqVendors: rfq.rfqVendors || [],
+        vendorIds: (rfq.rfqVendors || []).map((row: any) => String(row.vendorId)),
+        quotations: rfq.quotations || [],
+    };
+}
+
+function getQuotationImportNotes(source: 'manual' | 'import', lineNotes?: string[]) {
+    const notes = source === 'import'
+        ? ['Imported from vendor quotation Excel template', ...(lineNotes || []).filter(Boolean)]
+        : (lineNotes || []).filter(Boolean);
+    return notes.length > 0 ? notes.join(' | ') : undefined;
+}
+
+async function createQuotationRecord(params: {
+    userId?: number;
+    quoteData: any;
+    submittedItems: any[];
+    source?: 'manual' | 'import';
+}) {
+    const { userId, quoteData, submittedItems, source = 'manual' } = params;
+    const normalizedRfqId = toId(quoteData.rfqId, 'rfq id');
+    const normalizedVendorId = toId(quoteData.vendorId, 'vendor id');
+    const rfq = await db.query.rfqs.findFirst({
+        where: eq(rfqs.id, normalizedRfqId),
+        with: {
+            purchaseRequisition: { with: { prItems: true } },
+            rfqVendors: true,
+        },
+    });
+    if (!rfq) throw new Error('RFQ not found');
+    if (rfq.status === 'Closed') throw new Error('RFQ is already closed');
+    if (!(rfq.rfqVendors || []).some((row) => row.vendorId === normalizedVendorId)) {
+        throw new Error('Vendor is not invited on this RFQ');
+    }
+
+    const itemIds = [...new Set(submittedItems.map((item: any) => toId(item.itemId, 'item id')))];
+    const masterItems = await getActiveItemsByIds(itemIds);
+    const itemMap = new Map(masterItems.map((item) => [item.id, item]));
+
+    let baseAmount = 0;
+    let taxAmount = 0;
+
+    const preparedLines = submittedItems.map((line: any) => {
+        const normalizedItemId = toId(line.itemId, 'item id');
+        const item = itemMap.get(normalizedItemId);
+        if (!item) throw new Error(`Invalid item ${line.itemId}`);
+        const qty = toDecimal(line.qty ?? line.quantity);
+        const unitPrice = toDecimal(line.unitPrice);
+        if (qty <= 0) throw new Error('Quotation quantity must be greater than zero');
+
+        const taxRate = toDecimal(item.taxRate);
+        const amounts = computeTaxAmounts(qty, unitPrice, taxRate);
+        baseAmount = roundMoney(baseAmount + amounts.baseAmount);
+        taxAmount = roundMoney(taxAmount + amounts.taxAmount);
+
+        return {
+            itemId: normalizedItemId,
+            qty: qty.toFixed(2),
+            unitPrice: unitPrice.toFixed(2),
+            taxRate: taxRate.toFixed(2),
+            baseAmount: amounts.baseAmount.toFixed(2),
+            taxAmount: amounts.taxAmount.toFixed(2),
+            totalAmount: amounts.totalAmount.toFixed(2),
+            priceVariancePct: percentVariance(toDecimal(item.price), unitPrice).toFixed(2),
+            notes: line.notes ? String(line.notes).trim() : null,
+        };
+    });
+
+    const totalAmount = roundMoney(baseAmount + taxAmount);
+
+    return db.transaction(async (tx) => {
+        const [quote] = await tx.insert(quotations).values({
+            ...quoteData,
+            rfqId: normalizedRfqId,
+            vendorId: normalizedVendorId,
+            currency: quoteData.currency || 'AED',
+            baseAmount: baseAmount.toFixed(2),
+            taxAmount: taxAmount.toFixed(2),
+            totalAmount: totalAmount.toFixed(2),
+            status: quoteData.status || 'Pending',
+            deliveryDate: toOptionalDate(quoteData.deliveryDate) || new Date(),
+            notes: getQuotationImportNotes(
+                source,
+                preparedLines.map((line) => line.notes || undefined).filter((note): note is string => !!note),
+            ),
+        }).returning();
+
+        const insertedLines = await tx.insert(quotationItems).values(
+            preparedLines.map(({ notes, ...line }) => ({
+                quotationId: quote.id,
+                ...line,
+            })),
+        ).returning();
+
+        await logActivity(tx, {
+            userId,
+            action: source === 'import' ? 'QUOTE_IMPORTED' : 'QUOTE_CAPTURED',
+            description: `${source === 'import' ? 'Quotation imported' : 'Quotation captured'} for RFQ ${quote.rfqId}`,
+            module: 'Procurement',
+            entityType: 'Quotation',
+            entityId: quote.id,
+            afterData: { ...quote, quotationItems: insertedLines },
+            payload: { totalAmount, source },
+        });
+
+        return quote;
+    });
 }
 
 export const getPRs = async (_req: AuthRequest, res: Response) => {
@@ -136,7 +308,7 @@ export const getPR = async (req: AuthRequest, res: Response) => {
 };
 
 export const createPR = async (req: AuthRequest, res: Response) => {
-    const userId = requireUserId(req);
+    const userId = getAuditUserId(req);
     const { items: requestItems, status, ...prData } = req.body;
 
     if (!Array.isArray(requestItems) || requestItems.length === 0) {
@@ -158,11 +330,13 @@ export const createPR = async (req: AuthRequest, res: Response) => {
         }
 
         const newPR = await db.transaction(async (tx) => {
-            const prNo = await generateDocumentNo(tx, 'PR', new Date(prData.date || new Date()));
+            const transactionDate = toOptionalDate(prData.date) || new Date();
+            const prNo = await generateDocumentNo(tx, 'PR', transactionDate);
             const [pr] = await tx.insert(purchaseRequisitions).values({
                 ...prData,
                 prNo,
-                requestorId: prData.requestorId ? toId(prData.requestorId, 'requestor id') : userId,
+                date: transactionDate,
+                requestorId: prData.requestorId ? toId(prData.requestorId, 'requestor id') : userId ?? null,
                 status: initialStatus,
                 submittedAt: initialStatus === 'Submitted' ? new Date() : null,
             }).returning();
@@ -172,7 +346,7 @@ export const createPR = async (req: AuthRequest, res: Response) => {
                     prId: pr.id,
                     itemId: toId(item.itemId, 'item id'),
                     quantity: Number(item.quantity).toFixed(2),
-                    requiredDate: item.requiredDate,
+                    requiredDate: toOptionalDate(item.requiredDate),
                 })),
             ).returning();
 
@@ -197,8 +371,90 @@ export const createPR = async (req: AuthRequest, res: Response) => {
     }
 };
 
+export const updatePR = async (req: AuthRequest, res: Response) => {
+    const userId = getAuditUserId(req);
+    const { items: requestItems, status, ...prData } = req.body;
+
+    if (!Array.isArray(requestItems) || requestItems.length === 0) {
+        return res.status(400).json({ message: 'PR must contain at least one item' });
+    }
+
+    try {
+        const pr = await db.query.purchaseRequisitions.findFirst({
+            where: eq(purchaseRequisitions.id, toId(String(req.params.id), 'purchase requisition id')),
+            with: { prItems: true },
+        });
+        if (!pr) return res.status(404).json({ message: 'PR not found' });
+
+        assertPRActionAllowed(req, pr);
+
+        const nextStatus = status === 'Submitted' ? 'Submitted' : 'Draft';
+        if (pr.status === 'Rejected' && nextStatus === 'Draft') {
+            throw new Error('Rejected PRs must be resubmitted, not saved as draft');
+        }
+
+        const itemIds = [...new Set(requestItems.map((item: any) => toId(item.itemId, 'item id')).filter(Boolean))];
+        const masterItems = await getActiveItemsByIds(itemIds);
+        const itemMap = new Map(masterItems.map((item) => [item.id, item]));
+
+        for (const line of requestItems) {
+            const masterItem = itemMap.get(toId(line.itemId, 'item id'));
+            if (!masterItem) return res.status(400).json({ message: `Invalid item ${line.itemId}` });
+            if (!masterItem.active) return res.status(400).json({ message: `Item ${masterItem.code} is inactive and cannot be used on this PR` });
+            if (toDecimal(line.quantity) <= 0) return res.status(400).json({ message: 'PR quantity must be greater than zero' });
+        }
+
+        const updatedPR = await db.transaction(async (tx) => {
+            const patch: Record<string, unknown> = {
+                department: prData.department,
+                priority: prData.priority,
+                justification: prData.justification,
+                date: toOptionalDate(prData.date) || pr.date,
+                status: nextStatus,
+                submittedAt: nextStatus === 'Submitted' ? new Date() : null,
+                rejectedAt: nextStatus === 'Submitted' ? null : pr.rejectedAt,
+                rejectedBy: nextStatus === 'Submitted' ? null : pr.rejectedBy,
+                rejectionReason: nextStatus === 'Submitted' ? null : pr.rejectionReason,
+                approvedAt: null,
+                approvedBy: null,
+            };
+
+            const updated = await optimisticVersionUpdate(tx, purchaseRequisitions, purchaseRequisitions.id, pr.id, pr.versionNo, patch);
+
+            await tx.delete(prItems).where(eq(prItems.prId, pr.id));
+            const insertedLines = await tx.insert(prItems).values(
+                requestItems.map((item: any) => ({
+                    prId: pr.id,
+                    itemId: toId(item.itemId, 'item id'),
+                    quantity: Number(item.quantity).toFixed(2),
+                    requiredDate: toOptionalDate(item.requiredDate),
+                })),
+            ).returning();
+
+            await logActivity(tx, {
+                userId,
+                action: 'PR_UPDATED',
+                description: `Purchase requisition ${pr.prNo} updated`,
+                module: 'Procurement',
+                entityType: 'PurchaseRequisition',
+                entityId: pr.id,
+                beforeData: pr,
+                afterData: { ...updated, prItems: insertedLines },
+                payload: { itemCount: insertedLines.length, status: nextStatus },
+            });
+
+            return { ...updated, prItems: insertedLines };
+        });
+
+        res.json(updatedPR);
+    } catch (error: any) {
+        console.error(error);
+        res.status(400).json({ message: error.message || 'Error updating PR' });
+    }
+};
+
 export const updatePRStatus = async (req: AuthRequest, res: Response) => {
-    const userId = requireUserId(req);
+    const userId = getAuditUserId(req);
     const { status, rejectionReason } = req.body;
 
     try {
@@ -208,6 +464,7 @@ export const updatePRStatus = async (req: AuthRequest, res: Response) => {
         });
         if (!pr) return res.status(404).json({ message: 'PR not found' });
 
+        assertPRActionAllowed(req, pr, status);
         assertTransition(pr.status, status, STRICT_TRANSITIONS.PR, 'PR');
 
         if (status === 'Rejected' && !rejectionReason) {
@@ -223,17 +480,17 @@ export const updatePRStatus = async (req: AuthRequest, res: Response) => {
         if (status === 'Submitted') patch.submittedAt = new Date();
         if (status === 'Approved') {
             patch.approvedAt = new Date();
-            patch.approvedBy = userId;
+            patch.approvedBy = userId ?? null;
         }
         if (status === 'Rejected') {
             patch.rejectedAt = new Date();
-            patch.rejectedBy = userId;
+            patch.rejectedBy = userId ?? null;
             patch.rejectionReason = rejectionReason;
         }
         if (status === 'Closed') patch.closedAt = new Date();
         if (status === 'Cancelled') {
             patch.cancelledAt = new Date();
-            patch.cancelledBy = userId;
+            patch.cancelledBy = userId ?? null;
         }
 
         await db.transaction(async (tx) => {
@@ -284,15 +541,35 @@ export const getRFQs = async (_req: AuthRequest, res: Response) => {
                 quotations: { with: { vendor: true, quotationItems: { with: { item: true } } } },
             },
         });
-        res.json(result);
+        res.json(result.map(enrichRFQ));
     } catch (error) {
         console.error(error);
         res.status(500).json({ message: 'Error fetching RFQs' });
     }
 };
 
+export const getRFQ = async (req: AuthRequest, res: Response) => {
+    try {
+        const result = await db.query.rfqs.findFirst({
+            where: eq(rfqs.id, toId(String(req.params.id), 'rfq id')),
+            with: {
+                purchaseRequisition: { with: { requestor: true, prItems: { with: { item: true } } } },
+                rfqVendors: { with: { vendor: true } },
+                quotations: { with: { vendor: true, quotationItems: { with: { item: true } } } },
+            },
+        });
+
+        if (!result) return res.status(404).json({ message: 'RFQ not found' });
+
+        res.json(enrichRFQ(result));
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ message: 'Error fetching RFQ' });
+    }
+};
+
 export const createRFQ = async (req: AuthRequest, res: Response) => {
-    const userId = requireUserId(req);
+    const userId = getAuditUserId(req);
     const { vendorIds = [], ...rfqData } = req.body;
 
     try {
@@ -300,7 +577,7 @@ export const createRFQ = async (req: AuthRequest, res: Response) => {
         const normalizedVendorIds = vendorIds.map((vendorId: unknown) => toId(vendorId as string | number, 'vendor id'));
         const pr = await db.query.purchaseRequisitions.findFirst({
             where: eq(purchaseRequisitions.id, normalizedPrId),
-            with: { prItems: true },
+            with: { prItems: { with: { item: true } }, requestor: true },
         });
         if (!pr) return res.status(404).json({ message: 'PR not found' });
         if (pr.status !== 'Approved') return res.status(400).json({ message: 'Only approved PRs can move to RFQ' });
@@ -311,10 +588,12 @@ export const createRFQ = async (req: AuthRequest, res: Response) => {
         if (invitedVendors.some((vendor) => !vendor.active)) return res.status(400).json({ message: 'Inactive vendors cannot be invited to RFQ' });
 
         const newRFQ = await db.transaction(async (tx) => {
-            const rfqNo = await generateDocumentNo(tx, 'RFQ', new Date(rfqData.dueDate || new Date()));
+            const dueDate = toOptionalDate(rfqData.dueDate);
+            const rfqNo = await generateDocumentNo(tx, 'RFQ', dueDate || new Date());
             const [rfq] = await tx.insert(rfqs).values({
                 ...rfqData,
                 rfqNo,
+                dueDate,
                 status: 'Created',
             }).returning();
 
@@ -330,10 +609,90 @@ export const createRFQ = async (req: AuthRequest, res: Response) => {
                 payload: { prId: pr.id, vendorIds: normalizedVendorIds },
             });
 
-            return rfq;
+            return {
+                ...rfq,
+                dueDate,
+                rfqVendors: normalizedVendorIds.map((vendorId: number) => ({
+                    vendorId,
+                    vendor: invitedVendors.find((vendor) => vendor.id === vendorId),
+                })),
+            };
         });
 
-        res.status(201).json(newRFQ);
+        const emailResults = await Promise.all(
+            invitedVendors.map(async (vendor) => {
+                try {
+                    const attachmentBuffer = Buffer.from(await buildQuotationTemplateWorkbook({
+                        rfqId: newRFQ.id,
+                        rfqNo: newRFQ.rfqNo,
+                        prNo: pr.prNo,
+                        prDate: pr.date,
+                        department: pr.department,
+                        requestedBy: pr.requestor?.name || String(pr.requestorId || ''),
+                        priority: pr.priority,
+                        justification: pr.justification,
+                        dueDate: newRFQ.dueDate,
+                        vendorId: vendor.id,
+                        vendorName: vendor.name,
+                        lines: (pr.prItems || []).map((line) => ({
+                            itemId: line.itemId,
+                            itemCode: line.item?.code,
+                            itemName: line.item?.name || `Item ${line.itemId}`,
+                            uom: null,
+                            requestedQty: toDecimal(line.quantity),
+                            openQty: toDecimal(line.quantity),
+                            requiredDate: line.requiredDate,
+                            taxRate: toDecimal(line.item?.taxRate),
+                        })),
+                    }));
+                    const result = await sendRfqInvitationEmail({
+                        rfqNo: newRFQ.rfqNo,
+                        rfqId: newRFQ.id,
+                        prNo: pr.prNo,
+                        dueDate: newRFQ.dueDate,
+                        vendor,
+                        attachment: {
+                            filename: `${newRFQ.rfqNo}-${vendor.name.replace(/[^a-z0-9]+/gi, '_')}-quotation-template.xlsx`,
+                            content: attachmentBuffer,
+                        },
+                    });
+                    return { vendorId: vendor.id, vendorName: vendor.name, ...result };
+                } catch (error: any) {
+                    return {
+                        vendorId: vendor.id,
+                        vendorName: vendor.name,
+                        sent: false,
+                        skipped: false,
+                        reason: error?.message || 'Failed to send email',
+                    };
+                }
+            }),
+        );
+
+        const sentCount = emailResults.filter((result) => result.sent).length;
+        const failed = emailResults.filter((result) => !result.sent);
+
+        let finalRFQ = newRFQ;
+        if (sentCount > 0) {
+            const [updatedRfq] = await db.update(rfqs)
+                .set({ status: 'Sent' })
+                .where(eq(rfqs.id, newRFQ.id))
+                .returning();
+
+            if (updatedRfq) {
+                finalRFQ = { ...finalRFQ, status: updatedRfq.status };
+            }
+        }
+
+        res.status(201).json({
+            ...enrichRFQ(finalRFQ),
+            emailSummary: {
+                invitedCount: invitedVendors.length,
+                sentCount,
+                failedCount: failed.length,
+                failed,
+            },
+        });
     } catch (error: any) {
         console.error(error);
         res.status(400).json({ message: error.message || 'Error creating RFQ' });
@@ -357,7 +716,7 @@ export const getQuotes = async (_req: AuthRequest, res: Response) => {
 };
 
 export const submitQuote = async (req: AuthRequest, res: Response) => {
-    const userId = requireUserId(req);
+    const userId = getAuditUserId(req);
     const { items: submittedItems, ...quoteData } = req.body;
 
     if (!Array.isArray(submittedItems) || submittedItems.length === 0) {
@@ -365,86 +724,11 @@ export const submitQuote = async (req: AuthRequest, res: Response) => {
     }
 
     try {
-        const normalizedRfqId = toId(quoteData.rfqId, 'rfq id');
-        const normalizedVendorId = toId(quoteData.vendorId, 'vendor id');
-        const rfq = await db.query.rfqs.findFirst({
-            where: eq(rfqs.id, normalizedRfqId),
-            with: {
-                purchaseRequisition: { with: { prItems: true } },
-                rfqVendors: true,
-            },
-        });
-        if (!rfq) return res.status(404).json({ message: 'RFQ not found' });
-        if (rfq.status === 'Closed') return res.status(400).json({ message: 'RFQ is already closed' });
-        if (!(rfq.rfqVendors || []).some((row) => row.vendorId === normalizedVendorId)) {
-            return res.status(400).json({ message: 'Vendor is not invited on this RFQ' });
-        }
-
-        const itemIds = [...new Set(submittedItems.map((item: any) => toId(item.itemId, 'item id')))];
-        const masterItems = await getActiveItemsByIds(itemIds);
-        const itemMap = new Map(masterItems.map((item) => [item.id, item]));
-
-        let baseAmount = 0;
-        let taxAmount = 0;
-
-        const preparedLines = submittedItems.map((line: any) => {
-            const normalizedItemId = toId(line.itemId, 'item id');
-            const item = itemMap.get(normalizedItemId);
-            if (!item) throw new Error(`Invalid item ${line.itemId}`);
-            const qty = toDecimal(line.qty ?? line.quantity);
-            const unitPrice = toDecimal(line.unitPrice);
-            if (qty <= 0) throw new Error('Quotation quantity must be greater than zero');
-
-            const taxRate = toDecimal(item.taxRate);
-            const amounts = computeTaxAmounts(qty, unitPrice, taxRate);
-            baseAmount = roundMoney(baseAmount + amounts.baseAmount);
-            taxAmount = roundMoney(taxAmount + amounts.taxAmount);
-
-            return {
-                itemId: normalizedItemId,
-                qty: qty.toFixed(2),
-                unitPrice: unitPrice.toFixed(2),
-                taxRate: taxRate.toFixed(2),
-                baseAmount: amounts.baseAmount.toFixed(2),
-                taxAmount: amounts.taxAmount.toFixed(2),
-                totalAmount: amounts.totalAmount.toFixed(2),
-                priceVariancePct: percentVariance(toDecimal(item.price), unitPrice).toFixed(2),
-            };
-        });
-
-        const totalAmount = roundMoney(baseAmount + taxAmount);
-
-        const newQuote = await db.transaction(async (tx) => {
-            const [quote] = await tx.insert(quotations).values({
-                ...quoteData,
-                rfqId: normalizedRfqId,
-                vendorId: normalizedVendorId,
-                currency: quoteData.currency || 'AED',
-                baseAmount: baseAmount.toFixed(2),
-                taxAmount: taxAmount.toFixed(2),
-                totalAmount: totalAmount.toFixed(2),
-                status: quoteData.status || 'Pending',
-            }).returning();
-
-            const insertedLines = await tx.insert(quotationItems).values(
-                preparedLines.map((line) => ({
-                    quotationId: quote.id,
-                    ...line,
-                })),
-            ).returning();
-
-            await logActivity(tx, {
-                userId,
-                action: 'QUOTE_CAPTURED',
-                description: `Quotation captured for RFQ ${quote.rfqId}`,
-                module: 'Procurement',
-                entityType: 'Quotation',
-                entityId: quote.id,
-                afterData: { ...quote, quotationItems: insertedLines },
-                payload: { totalAmount },
-            });
-
-            return quote;
+        const newQuote = await createQuotationRecord({
+            userId,
+            quoteData,
+            submittedItems,
+            source: 'manual',
         });
 
         res.status(201).json(newQuote);
@@ -454,8 +738,36 @@ export const submitQuote = async (req: AuthRequest, res: Response) => {
     }
 };
 
+export const importQuote = async (req: AuthRequest, res: Response) => {
+    const userId = getAuditUserId(req);
+
+    try {
+        if (!req.file?.buffer) {
+            return res.status(400).json({ message: 'Quotation file is required' });
+        }
+
+        const imported = await parseQuotationTemplateWorkbook(req.file.buffer);
+        const quote = await createQuotationRecord({
+            userId,
+            quoteData: {
+                rfqId: imported.rfqId,
+                vendorId: imported.vendorId,
+                deliveryDate: imported.deliveryDate,
+                status: 'Pending',
+            },
+            submittedItems: imported.items,
+            source: 'import',
+        });
+
+        res.status(201).json(quote);
+    } catch (error: any) {
+        console.error(error);
+        res.status(400).json({ message: error.message || 'Error importing quotation' });
+    }
+};
+
 export const updateQuoteStatus = async (req: AuthRequest, res: Response) => {
-    const userId = requireUserId(req);
+    const userId = getAuditUserId(req);
     const { status } = req.body;
 
     try {
@@ -511,8 +823,30 @@ export const getPOs = async (_req: AuthRequest, res: Response) => {
     }
 };
 
+export const getPO = async (req: AuthRequest, res: Response) => {
+    try {
+        const result = await db.query.purchaseOrders.findFirst({
+            where: eq(purchaseOrders.id, toId(String(req.params.id), 'purchase order id')),
+            with: {
+                pr: { with: { requestor: true, prItems: { with: { item: true } } } },
+                vendor: true,
+                poItems: { with: { item: true } },
+                grns: { with: { warehouse: true, grnItems: { with: { item: true } } } },
+                invoices: { with: { vendor: true, invoiceLines: { with: { item: true } } } },
+            },
+        });
+
+        if (!result) return res.status(404).json({ message: 'PO not found' });
+
+        res.json(enrichPOLines(result));
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ message: 'Error fetching PO' });
+    }
+};
+
 export const createPO = async (req: AuthRequest, res: Response) => {
-    const userId = requireUserId(req);
+    const userId = getAuditUserId(req);
     const { items: requestItems, prId, vendorId, deliveryDate, rfqId, ...poData } = req.body;
 
     if (!Array.isArray(requestItems) || requestItems.length === 0) {
@@ -632,7 +966,7 @@ export const createPO = async (req: AuthRequest, res: Response) => {
 };
 
 export const updatePOStatus = async (req: AuthRequest, res: Response) => {
-    const userId = requireUserId(req);
+    const userId = getAuditUserId(req);
     const { status } = req.body;
 
     try {
@@ -662,12 +996,12 @@ export const updatePOStatus = async (req: AuthRequest, res: Response) => {
         const patch: Record<string, unknown> = { status };
         if (status === 'Issued') {
             patch.issuedAt = new Date();
-            patch.issuedBy = userId;
+            patch.issuedBy = userId ?? null;
         }
         if (status === 'Closed') patch.closedAt = new Date();
         if (status === 'Cancelled') {
             patch.cancelledAt = new Date();
-            patch.cancelledBy = userId;
+            patch.cancelledBy = userId ?? null;
         }
 
         await db.transaction(async (tx) => {

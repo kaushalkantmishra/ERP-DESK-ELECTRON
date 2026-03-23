@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import {
     getItems, addItem,
-    getVendors, addVendor,
+    getVendors, addVendor, updateVendor,
     getWarehouses, addWarehouse,
     getCategories, addCategory,
     getUoms, addUom
@@ -18,6 +18,7 @@ router.post('/items', roleMiddleware(['Admin', 'Store', 'Procurement']), addItem
 
 router.get('/vendors', getVendors);
 router.post('/vendors', roleMiddleware(['Admin', 'Procurement']), addVendor);
+router.patch('/vendors/:id', roleMiddleware(['Admin', 'Procurement']), updateVendor);
 
 router.get('/warehouses', getWarehouses);
 router.post('/warehouses', roleMiddleware(['Admin', 'Store']), addWarehouse);

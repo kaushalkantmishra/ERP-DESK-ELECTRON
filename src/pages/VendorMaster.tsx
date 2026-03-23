@@ -1,22 +1,44 @@
-import React, { useState, useEffect } from 'react';
-import { Plus, Search, Star } from 'lucide-react';
+import React, { useEffect, useMemo, useState } from 'react';
+import { Eye, Pencil, Plus, Search, Star } from 'lucide-react';
 import { masterService } from '../services/masterService';
 import { Vendor } from '../types/models';
+
+const createEmptyVendor = (): Omit<Vendor, 'id'> => ({
+    name: '',
+    email: '',
+    phone: '',
+    rating: 3,
+    address: '',
+    taxId: '',
+    contactPerson: '',
+    paymentTerms: '',
+    active: true,
+});
 
 const VendorMaster = () => {
     const [vendors, setVendors] = useState<Vendor[]>([]);
     const [isLoading, setIsLoading] = useState(true);
-    const [isAdding, setIsAdding] = useState(false);
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [searchTerm, setSearchTerm] = useState('');
     const [minRating, setMinRating] = useState(0);
-    const [newVendor, setNewVendor] = useState<Omit<Vendor, 'id'>>({
-        name: '', email: '', phone: '', rating: 3, address: '', taxId: '', contactPerson: '', paymentTerms: '', active: true
-    });
+    const [panelMode, setPanelMode] = useState<'add' | 'view' | 'edit' | null>(null);
+    const [selectedVendor, setSelectedVendor] = useState<Vendor | null>(null);
+    const [formVendor, setFormVendor] = useState<Omit<Vendor, 'id'>>(createEmptyVendor());
 
     useEffect(() => {
         fetchVendors();
     }, []);
+
+    const isViewMode = panelMode === 'view';
+    const isEditMode = panelMode === 'edit';
+    const isAddMode = panelMode === 'add';
+    const isPanelOpen = panelMode !== null;
+    const panelTitle = useMemo(() => {
+        if (isAddMode) return 'New Vendor';
+        if (isEditMode) return 'Edit Vendor';
+        if (isViewMode) return 'Vendor Details';
+        return 'Vendor';
+    }, [isAddMode, isEditMode, isViewMode]);
 
     const fetchVendors = async () => {
         try {
@@ -30,16 +52,65 @@ const VendorMaster = () => {
         }
     };
 
+    const openAddPanel = () => {
+        setSelectedVendor(null);
+        setFormVendor(createEmptyVendor());
+        setPanelMode('add');
+    };
+
+    const openViewPanel = (vendor: Vendor) => {
+        setSelectedVendor(vendor);
+        setFormVendor({
+            name: vendor.name ?? '',
+            email: vendor.email ?? '',
+            phone: vendor.phone ?? '',
+            rating: vendor.rating ?? 0,
+            address: vendor.address ?? '',
+            taxId: vendor.taxId ?? '',
+            contactPerson: vendor.contactPerson ?? '',
+            paymentTerms: vendor.paymentTerms ?? '',
+            active: vendor.active,
+        });
+        setPanelMode('view');
+    };
+
+    const openEditPanel = (vendor: Vendor) => {
+        setSelectedVendor(vendor);
+        setFormVendor({
+            name: vendor.name ?? '',
+            email: vendor.email ?? '',
+            phone: vendor.phone ?? '',
+            rating: vendor.rating ?? 0,
+            address: vendor.address ?? '',
+            taxId: vendor.taxId ?? '',
+            contactPerson: vendor.contactPerson ?? '',
+            paymentTerms: vendor.paymentTerms ?? '',
+            active: vendor.active,
+        });
+        setPanelMode('edit');
+    };
+
+    const closePanel = () => {
+        setPanelMode(null);
+        setSelectedVendor(null);
+        setFormVendor(createEmptyVendor());
+    };
+
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
+        if (!isAddMode && !isEditMode) return;
+
         setIsSubmitting(true);
         try {
-            await masterService.addVendor(newVendor);
+            if (isEditMode && selectedVendor) {
+                await masterService.updateVendor(selectedVendor.id, formVendor);
+            } else {
+                await masterService.addVendor(formVendor);
+            }
             await fetchVendors();
-            setIsAdding(false);
-            setNewVendor({ name: '', email: '', phone: '', rating: 3, address: '', taxId: '', contactPerson: '', paymentTerms: '', active: true });
+            closePanel();
         } catch (error) {
-            console.error('Error adding vendor:', error);
+            console.error(`Error ${isEditMode ? 'updating' : 'adding'} vendor:`, error);
         } finally {
             setIsSubmitting(false);
         }
@@ -85,17 +156,17 @@ const VendorMaster = () => {
                 </select>
 
                 <button
-                    onClick={() => setIsAdding(!isAdding)}
+                    onClick={() => (isPanelOpen ? closePanel() : openAddPanel())}
                     className="btn-primary flex items-center gap-2 ml-auto"
                 >
                     <Plus size={14} />
-                    <span>{isAdding ? 'Cancel' : 'Add Vendor'}</span>
+                    <span>{isPanelOpen ? 'Close Panel' : 'Add Vendor'}</span>
                 </button>
             </div>
 
-            {isAdding && (
+            {isPanelOpen && (
                 <div className="m-4 p-4 bg-vscode-sidebar rounded border border-vscode-border animate-fade-in-down">
-                    <h2 className="text-sm font-bold mb-3 text-vscode-text">New Vendor</h2>
+                    <h2 className="text-sm font-bold mb-3 text-vscode-text">{panelTitle}</h2>
                     <form onSubmit={handleSubmit} className="grid grid-cols-2 gap-4">
                         <div className="form-group">
                             <label className="form-label">Company Name</label>
@@ -103,8 +174,9 @@ const VendorMaster = () => {
                                 required
                                 type="text"
                                 className="input-vscode w-full"
-                                value={newVendor.name}
-                                onChange={e => setNewVendor({ ...newVendor, name: e.target.value })}
+                                value={formVendor.name}
+                                readOnly={isViewMode}
+                                onChange={e => setFormVendor({ ...formVendor, name: e.target.value })}
                             />
                         </div>
                         <div className="form-group">
@@ -113,8 +185,9 @@ const VendorMaster = () => {
                                 required
                                 type="email"
                                 className="input-vscode w-full"
-                                value={newVendor.email}
-                                onChange={e => setNewVendor({ ...newVendor, email: e.target.value })}
+                                value={formVendor.email}
+                                readOnly={isViewMode}
+                                onChange={e => setFormVendor({ ...formVendor, email: e.target.value })}
                             />
                         </div>
                         <div className="form-group">
@@ -123,8 +196,9 @@ const VendorMaster = () => {
                                 required
                                 type="text"
                                 className="input-vscode w-full"
-                                value={newVendor.phone}
-                                onChange={e => setNewVendor({ ...newVendor, phone: e.target.value })}
+                                value={formVendor.phone}
+                                readOnly={isViewMode}
+                                onChange={e => setFormVendor({ ...formVendor, phone: e.target.value })}
                             />
                         </div>
                         <div className="form-group">
@@ -132,8 +206,9 @@ const VendorMaster = () => {
                             <input
                                 type="text"
                                 className="input-vscode w-full"
-                                value={newVendor.taxId || ''}
-                                onChange={e => setNewVendor({ ...newVendor, taxId: e.target.value })}
+                                value={formVendor.taxId || ''}
+                                readOnly={isViewMode}
+                                onChange={e => setFormVendor({ ...formVendor, taxId: e.target.value })}
                             />
                         </div>
                         <div className="form-group">
@@ -141,8 +216,9 @@ const VendorMaster = () => {
                             <input
                                 type="text"
                                 className="input-vscode w-full"
-                                value={newVendor.contactPerson || ''}
-                                onChange={e => setNewVendor({ ...newVendor, contactPerson: e.target.value })}
+                                value={formVendor.contactPerson || ''}
+                                readOnly={isViewMode}
+                                onChange={e => setFormVendor({ ...formVendor, contactPerson: e.target.value })}
                             />
                         </div>
                         <div className="form-group">
@@ -151,16 +227,18 @@ const VendorMaster = () => {
                                 type="text"
                                 placeholder="e.g. Net 30"
                                 className="input-vscode w-full"
-                                value={newVendor.paymentTerms || ''}
-                                onChange={e => setNewVendor({ ...newVendor, paymentTerms: e.target.value })}
+                                value={formVendor.paymentTerms || ''}
+                                readOnly={isViewMode}
+                                onChange={e => setFormVendor({ ...formVendor, paymentTerms: e.target.value })}
                             />
                         </div>
                         <div className="form-group col-span-2">
                             <label className="flex items-center gap-2 cursor-pointer">
                                 <input
                                     type="checkbox"
-                                    checked={newVendor.active}
-                                    onChange={e => setNewVendor({ ...newVendor, active: e.target.checked })}
+                                    checked={formVendor.active}
+                                    disabled={isViewMode}
+                                    onChange={e => setFormVendor({ ...formVendor, active: e.target.checked })}
                                 />
                                 <span className="text-sm">Active Vendor</span>
                             </label>
@@ -170,15 +248,22 @@ const VendorMaster = () => {
                             <textarea
                                 className="form-textarea w-full"
                                 rows={2}
-                                value={newVendor.address}
-                                onChange={e => setNewVendor({ ...newVendor, address: e.target.value })}
+                                value={formVendor.address}
+                                readOnly={isViewMode}
+                                onChange={e => setFormVendor({ ...formVendor, address: e.target.value })}
                             />
                         </div>
                         <div className="col-span-2 flex justify-end gap-2">
-                            <button type="button" onClick={() => setIsAdding(false)} className="btn-secondary py-1 px-3">Cancel</button>
-                            <button type="submit" disabled={isSubmitting} className="btn-primary py-1 px-3">
-                                {isSubmitting ? 'Saving...' : 'Save Vendor'}
-                            </button>
+                            {isViewMode ? (
+                                <button type="button" onClick={closePanel} className="btn-secondary py-1 px-3">Close</button>
+                            ) : (
+                                <>
+                                    <button type="button" onClick={closePanel} className="btn-secondary py-1 px-3">Cancel</button>
+                                    <button type="submit" disabled={isSubmitting} className="btn-primary py-1 px-3">
+                                        {isSubmitting ? (isEditMode ? 'Updating...' : 'Saving...') : (isEditMode ? 'Update Vendor' : 'Save Vendor')}
+                                    </button>
+                                </>
+                            )}
                         </div>
                     </form>
                 </div>
@@ -191,14 +276,16 @@ const VendorMaster = () => {
                             <th>Status</th>
                             <th>Name</th>
                             <th>Contact</th>
+                            <th>Email</th>
                             <th>Tax ID</th>
                             <th>Rating</th>
                             <th>Location</th>
+                            <th>Action</th>
                         </tr>
                     </thead>
                     <tbody>
                         {isLoading ? (
-                            <tr><td colSpan={6} className="p-4 text-center text-vscode-text-muted">Loading vendors...</td></tr>
+                            <tr><td colSpan={8} className="p-4 text-center text-vscode-text-muted">Loading vendors...</td></tr>
                         ) : filteredVendors.map(vendor => (
                             <tr key={vendor.id} className="hover:bg-vscode-list-hover group">
                                 <td className="w-10 text-center">
@@ -206,9 +293,10 @@ const VendorMaster = () => {
                                 </td>
                                 <td className="font-semibold">{vendor.name}</td>
                                 <td>
-                                    <div>{vendor.contactPerson}</div>
-                                    <div className="text-xs text-vscode-text-muted">{vendor.email}</div>
+                                    <div>{vendor.contactPerson || '-'}</div>
+                                    <div className="text-xs text-vscode-text-muted">{vendor.phone || '-'}</div>
                                 </td>
+                                <td>{vendor.email || '-'}</td>
                                 <td>{vendor.taxId || '-'}</td>
                                 <td>
                                     <div className="flex items-center text-yellow-500 gap-0.5">
@@ -216,12 +304,32 @@ const VendorMaster = () => {
                                         <Star size={12} fill="currentColor" />
                                     </div>
                                 </td>
-                                <td className="text-sm">{vendor.address}</td>
+                                <td className="text-sm">{vendor.address || '-'}</td>
+                                <td>
+                                    <div className="flex items-center gap-2">
+                                        <button
+                                            type="button"
+                                            onClick={() => openViewPanel(vendor)}
+                                            className="p-1 rounded hover:bg-vscode-button-secondary text-vscode-text-muted hover:text-vscode-text"
+                                            title="View vendor"
+                                        >
+                                            <Eye size={15} />
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => openEditPanel(vendor)}
+                                            className="p-1 rounded hover:bg-vscode-button-secondary text-vscode-text-muted hover:text-vscode-text"
+                                            title="Edit vendor"
+                                        >
+                                            <Pencil size={15} />
+                                        </button>
+                                    </div>
+                                </td>
                             </tr>
                         ))}
                         {!isLoading && filteredVendors.length === 0 && (
                             <tr>
-                                <td colSpan={6} className="text-center py-8 text-vscode-text-muted">
+                                <td colSpan={8} className="text-center py-8 text-vscode-text-muted">
                                     No vendors found.
                                 </td>
                             </tr>

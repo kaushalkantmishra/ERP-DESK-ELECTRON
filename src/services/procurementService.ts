@@ -14,12 +14,20 @@ export const procurementService = {
         const response = await api.post('/procurement/prs', pr);
         return response.data;
     },
+    updatePR: async (id: string, pr: any): Promise<PurchaseRequisition> => {
+        const response = await api.patch(`/procurement/prs/${id}`, pr);
+        return response.data;
+    },
     updatePRStatus: async (id: string, status: PRStatus, rejectionReason?: string): Promise<void> => {
         await api.patch(`/procurement/prs/${id}/status`, { status, rejectionReason });
     },
 
     getRFQs: async (): Promise<RFQ[]> => {
         const response = await api.get('/procurement/rfqs');
+        return response.data;
+    },
+    getRFQ: async (id: string): Promise<RFQ> => {
+        const response = await api.get(`/procurement/rfqs/${id}`);
         return response.data;
     },
     createRFQ: async (rfq: any): Promise<RFQ> => {
@@ -35,12 +43,24 @@ export const procurementService = {
         const response = await api.post('/procurement/quotes', quote);
         return response.data;
     },
+    importQuote: async (file: File): Promise<Quotation> => {
+        const formData = new FormData();
+        formData.append('file', file);
+        const response = await api.post('/procurement/quotes/import', formData, {
+            headers: { 'Content-Type': 'multipart/form-data' },
+        });
+        return response.data;
+    },
     updateQuoteStatus: async (id: string, status: 'Pending' | 'Accepted' | 'Rejected'): Promise<void> => {
         await api.patch(`/procurement/quotes/${id}/status`, { status });
     },
 
     getPOs: async (): Promise<PurchaseOrder[]> => {
         const response = await api.get('/procurement/pos');
+        return response.data;
+    },
+    getPO: async (id: string): Promise<PurchaseOrder> => {
+        const response = await api.get(`/procurement/pos/${id}`);
         return response.data;
     },
     createPO: async (po: any): Promise<PurchaseOrder> => {

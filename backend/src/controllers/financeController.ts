@@ -25,9 +25,30 @@ import {
     toId,
 } from '../erp.js';
 
-function requireUserId(req: AuthRequest): number {
+function requireUserId(req: AuthRequest): string | number {
     if (!req.user?.id) throw new Error('Authenticated user is required');
     return req.user.id;
+}
+
+function getAuditUserId(req: AuthRequest): number | undefined {
+    const rawUserId = req.user?.id;
+    if (rawUserId === null || rawUserId === undefined || rawUserId === '') return undefined;
+
+    const numericUserId = typeof rawUserId === 'number' ? rawUserId : Number(rawUserId);
+    if (!Number.isInteger(numericUserId) || numericUserId <= 0) {
+        return undefined;
+    }
+
+    return numericUserId;
+}
+
+function toOptionalDate(value: unknown) {
+    if (value === null || value === undefined || value === '') return null;
+    const parsedDate = value instanceof Date ? value : new Date(String(value));
+    if (Number.isNaN(parsedDate.getTime())) {
+        throw new Error(`Invalid date value: ${value}`);
+    }
+    return parsedDate;
 }
 
 function enrichInvoice(invoice: any) {
@@ -84,7 +105,7 @@ export const getInvoiceById = async (req: AuthRequest, res: Response) => {
 };
 
 export const createInvoice = async (req: AuthRequest, res: Response) => {
-    const userId = requireUserId(req);
+    const userId = getAuditUserId(req);
     const { lines, poId, vendorId, amount, ...invoiceData } = req.body;
 
     if (!Array.isArray(lines) || lines.length === 0) {
@@ -158,13 +179,17 @@ export const createInvoice = async (req: AuthRequest, res: Response) => {
         }
 
         const newInvoice = await db.transaction(async (tx) => {
-            const invoiceNo = await generateDocumentNo(tx, 'INV', new Date(invoiceData.date || new Date()));
+            const invoiceDate = toOptionalDate(invoiceData.date) || new Date();
+            const dueDate = toOptionalDate(invoiceData.dueDate);
+            const invoiceNo = await generateDocumentNo(tx, 'INV', invoiceDate);
             const [invoice] = await tx.insert(invoices).values({
                 ...invoiceData,
                 invoiceNo,
                 vendorInvoiceNo: invoiceData.vendorInvoiceNo || invoiceNo,
                 poId: normalizedPoId,
                 vendorId: normalizedVendorId,
+                date: invoiceDate,
+                dueDate,
                 currency: invoiceData.currency || 'AED',
                 baseAmount: baseAmount.toFixed(2),
                 taxAmount: taxAmount.toFixed(2),
@@ -174,7 +199,7 @@ export const createInvoice = async (req: AuthRequest, res: Response) => {
                 balanceAmount: requestedAmount.toFixed(2),
                 matchWarnings: matchWarnings.length > 0 ? matchWarnings : null,
                 status: 'Matched',
-                enteredBy: userId,
+                enteredBy: userId ?? null,
             }).returning();
 
             const insertedLines = [];
@@ -213,7 +238,7 @@ export const createInvoice = async (req: AuthRequest, res: Response) => {
 };
 
 export const updateInvoiceStatus = async (req: AuthRequest, res: Response) => {
-    const userId = requireUserId(req);
+    const userId = getAuditUserId(req);
     const { status } = req.body;
 
     try {
@@ -232,7 +257,7 @@ export const updateInvoiceStatus = async (req: AuthRequest, res: Response) => {
         const patch: Record<string, unknown> = { status };
         if (status === 'Approved') {
             patch.approvedAt = new Date();
-            patch.approvedBy = userId;
+            patch.approvedBy = userId ?? null;
         }
 
         await db.transaction(async (tx) => {
@@ -283,8 +308,38 @@ export const getPayments = async (_req: AuthRequest, res: Response) => {
     }
 };
 
+export const getPaymentById = async (req: AuthRequest, res: Response) => {
+    try {
+        const payment = await db.query.payments.findFirst({
+            where: eq(payments.id, toId(String(req.params.id), 'payment id')),
+            with: {
+                vendor: true,
+                paymentAllocations: {
+                    with: {
+                        invoice: {
+                            with: {
+                                vendor: true,
+                                po: true,
+                            },
+                        },
+                    },
+                },
+            },
+        });
+
+        if (!payment) {
+            return res.status(404).json({ message: 'Payment not found' });
+        }
+
+        res.json(payment);
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ message: 'Error fetching payment' });
+    }
+};
+
 export const createPayment = async (req: AuthRequest, res: Response) => {
-    const userId = requireUserId(req);
+    const userId = getAuditUserId(req);
     const { allocations, vendorId, amount, method, ...paymentData } = req.body;
 
     if (!Array.isArray(allocations) || allocations.length === 0) {
@@ -300,20 +355,22 @@ export const createPayment = async (req: AuthRequest, res: Response) => {
         const normalizedVendorId = toId(vendorId, 'vendor id');
 
         const newPayment = await db.transaction(async (tx) => {
-            const paymentNo = await generateDocumentNo(tx, 'PAY', new Date(paymentData.paymentDate || new Date()));
+            const paymentDate = toOptionalDate(paymentData.paymentDate) || new Date();
+            const paymentNo = await generateDocumentNo(tx, 'PAY', paymentDate);
             const [payment] = await tx.insert(payments).values({
                 ...paymentData,
                 paymentNo,
                 vendorId: normalizedVendorId,
+                paymentDate,
                 baseAmount: paymentAmount.toFixed(2),
                 taxAmount: '0.00',
                 totalAmount: paymentAmount.toFixed(2),
                 amount: paymentAmount.toFixed(2),
                 method,
                 status: 'Posted',
-                createdBy: userId,
+                createdBy: userId ?? null,
                 postedAt: new Date(),
-                postedBy: userId,
+                postedBy: userId ?? null,
             }).returning();
 
             for (const allocation of allocations) {

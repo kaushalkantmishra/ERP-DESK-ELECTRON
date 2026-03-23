@@ -1,12 +1,15 @@
 import { useEffect, useState } from 'react';
-import { CheckCircle, FileText, Send } from 'lucide-react';
+import { CheckCircle, Eye, FileText, Send } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import { procurementService } from '../services/procurementService';
-import { PurchaseRequisition, Vendor } from '../types/models';
+import { PurchaseRequisition, RFQ, Vendor } from '../types/models';
 import { useAppContext } from '../contexts/AppContext';
 
 const RFQManager: React.FC = () => {
+    const navigate = useNavigate();
     const { vendors } = useAppContext();
     const [prs, setPrs] = useState<PurchaseRequisition[]>([]);
+    const [rfqs, setRfqs] = useState<RFQ[]>([]);
     const [selectedPRs, setSelectedPRs] = useState<string[]>([]);
     const [selectedVendorIds, setSelectedVendorIds] = useState<string[]>([]);
     const [isVendorModalOpen, setIsVendorModalOpen] = useState(false);
@@ -17,8 +20,12 @@ const RFQManager: React.FC = () => {
     async function fetchData() {
         try {
             setIsLoading(true);
-            const fetchedPRs = await procurementService.getPRs();
+            const [fetchedPRs, fetchedRfqs] = await Promise.all([
+                procurementService.getPRs(),
+                procurementService.getRFQs(),
+            ]);
             setPrs(fetchedPRs.filter((pr) => pr.status === 'Submitted' || pr.status === 'Approved'));
+            setRfqs(fetchedRfqs);
         } catch (error) {
             console.error('Error fetching PRs:', error);
         } finally {
@@ -35,13 +42,25 @@ const RFQManager: React.FC = () => {
         }
         try {
             setIsLoading(true);
+            const summaries: string[] = [];
             for (const prId of selectedPRs) {
-                await procurementService.createRFQ({ prId, dueDate: new Date(Date.now() + 7 * 86400000).toISOString(), vendorIds: selectedVendorIds });
+                const response = await procurementService.createRFQ({
+                    prId,
+                    dueDate: new Date(Date.now() + 7 * 86400000).toISOString(),
+                    vendorIds: selectedVendorIds,
+                });
+                const invitedCount = response.emailSummary?.invitedCount ?? response.rfqVendors?.length ?? response.vendorIds?.length ?? 0;
+                const sentCount = response.emailSummary?.sentCount ?? 0;
+                const failedCount = response.emailSummary?.failedCount ?? 0;
+                summaries.push(`${response.rfqNo}: ${invitedCount} invited, ${sentCount} email(s) sent${failedCount ? `, ${failedCount} failed/skipped` : ''}`);
             }
             setSelectedPRs([]);
             setSelectedVendorIds([]);
             setIsVendorModalOpen(false);
             await fetchData();
+            if (summaries.length > 0) {
+                alert(`RFQ processing completed.\n\n${summaries.join('\n')}`);
+            }
         } catch (error: any) {
             console.error(error);
             alert(error?.response?.data?.message || 'Unable to create RFQ');
@@ -98,6 +117,51 @@ const RFQManager: React.FC = () => {
                             <div>{pr.status === 'Submitted' && <button className="btn-secondary text-xs flex items-center gap-1" onClick={() => void handleApprovePR(pr.id)}><CheckCircle size={12} className="text-status-success" />Approve</button>}</div>
                         </div>
                     ))}
+                </div>
+
+                <div className="mt-8">
+                    <h3 className="text-sm font-semibold mb-3">Existing RFQs</h3>
+                    <div className="overflow-auto bg-vscode-sidebar border border-vscode-border">
+                        <table className="table-vscode">
+                            <thead>
+                                <tr>
+                                    <th>RFQ No</th>
+                                    <th>PR</th>
+                                    <th>Due Date</th>
+                                    <th>Vendors</th>
+                                    <th>Quotes</th>
+                                    <th>Status</th>
+                                    <th>Action</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {rfqs.map((rfq) => (
+                                    <tr key={rfq.id}>
+                                        <td className="font-mono text-xs font-semibold">{rfq.rfqNo}</td>
+                                        <td>{rfq.purchaseRequisition?.prNo || rfq.prId}</td>
+                                        <td>{rfq.dueDate ? new Date(rfq.dueDate).toLocaleDateString() : '-'}</td>
+                                        <td>{rfq.rfqVendors?.length || rfq.vendorIds?.length || 0}</td>
+                                        <td>{rfq.quotations?.length || 0}</td>
+                                        <td><span className="badge badge-info">{rfq.status}</span></td>
+                                        <td>
+                                            <button
+                                                className="text-vscode-accent hover:text-vscode-accent-hover p-1"
+                                                title="View RFQ"
+                                                onClick={() => navigate(`/procurement/rfq/${rfq.id}`)}
+                                            >
+                                                <Eye size={14} />
+                                            </button>
+                                        </td>
+                                    </tr>
+                                ))}
+                                {!isLoading && rfqs.length === 0 && (
+                                    <tr>
+                                        <td colSpan={7} className="p-4 text-center text-vscode-text-muted">No RFQs found.</td>
+                                    </tr>
+                                )}
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
             </div>
 

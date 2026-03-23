@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { CreditCard, Plus } from 'lucide-react';
+import { CreditCard, Eye, Plus } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import { financeService } from '../services/financeService';
 import { Invoice, Payment } from '../types/models';
 
@@ -9,6 +10,7 @@ interface AllocationDraft {
 }
 
 const Payments: React.FC = () => {
+    const navigate = useNavigate();
     const [invoices, setInvoices] = useState<Invoice[]>([]);
     const [payments, setPayments] = useState<Payment[]>([]);
     const [isLoading, setIsLoading] = useState(true);
@@ -195,6 +197,7 @@ const Payments: React.FC = () => {
                             <th>Method</th>
                             <th>Amount</th>
                             <th>Status</th>
+                            <th>Action</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -206,9 +209,18 @@ const Payments: React.FC = () => {
                                 <td>{payment.method}</td>
                                 <td className="font-mono">${Number(payment.amount).toFixed(2)}</td>
                                 <td><span className="badge badge-success">{payment.status}</span></td>
+                                <td>
+                                    <button
+                                        className="text-vscode-accent hover:text-vscode-accent-hover p-1"
+                                        title="View payment"
+                                        onClick={() => navigate(`/finance/payments/${payment.id}`)}
+                                    >
+                                        <Eye size={14} />
+                                    </button>
+                                </td>
                             </tr>
                         ))}
-                        {!isLoading && payments.length === 0 && <tr><td colSpan={6} className="p-4 text-center text-vscode-text-muted">No payments posted yet.</td></tr>}
+                        {!isLoading && payments.length === 0 && <tr><td colSpan={7} className="p-4 text-center text-vscode-text-muted">No payments posted yet.</td></tr>}
                     </tbody>
                 </table>
             </div>

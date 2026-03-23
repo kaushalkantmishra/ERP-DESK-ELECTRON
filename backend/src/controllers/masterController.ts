@@ -111,6 +111,47 @@ export const addVendor = async (req: Request, res: Response) => {
     }
 };
 
+export const updateVendor = async (req: Request, res: Response) => {
+    try {
+        const vendorId = toId(String(req.params.id), 'vendor id');
+        const payload = req.body;
+        if (!payload.name || !payload.email) return res.status(400).json({ message: 'Vendor name and email are required' });
+
+        const existingVendor = await db.query.vendors.findFirst({ where: eq(vendors.id, vendorId) });
+        if (!existingVendor) return res.status(404).json({ message: 'Vendor not found' });
+
+        const normalizedName = normalizeText(String(payload.name));
+        const duplicateVendor = await db.query.vendors.findFirst({
+            where: or(
+                eq(vendors.email, String(payload.email).trim().toLowerCase()),
+                sql`lower(trim(${vendors.name})) = ${normalizedName}`,
+            ),
+        });
+
+        if (duplicateVendor && duplicateVendor.id !== vendorId) {
+            return res.status(400).json({ message: 'A vendor with the same name or email already exists' });
+        }
+
+        const [updatedVendor] = await db.update(vendors).set({
+            ...payload,
+            name: String(payload.name).trim(),
+            email: String(payload.email).trim().toLowerCase(),
+            phone: payload.phone ? String(payload.phone).trim() : null,
+            rating: Number(payload.rating || 0),
+            address: payload.address ? String(payload.address).trim() : null,
+            taxId: payload.taxId ? String(payload.taxId).trim() : null,
+            paymentTerms: payload.paymentTerms ? String(payload.paymentTerms).trim() : null,
+            contactPerson: payload.contactPerson ? String(payload.contactPerson).trim() : null,
+            active: payload.active !== false,
+        }).where(eq(vendors.id, vendorId)).returning();
+
+        res.json(updatedVendor);
+    } catch (error: any) {
+        console.error(error);
+        res.status(500).json({ message: error.message || 'Error updating vendor' });
+    }
+};
+
 export const getWarehouses = async (_req: Request, res: Response) => {
     try {
         const result = await db.select().from(warehouses);

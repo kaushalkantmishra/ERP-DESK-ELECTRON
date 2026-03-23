@@ -21,6 +21,10 @@ export const masterService = {
         const response = await api.post('/master/vendors', vendor);
         return response.data;
     },
+    updateVendor: async (id: string, vendor: Omit<Vendor, 'id'>): Promise<Vendor> => {
+        const response = await api.patch(`/master/vendors/${id}`, vendor);
+        return response.data;
+    },
 
     // Warehouses
     getWarehouses: async (): Promise<Warehouse[]> => {

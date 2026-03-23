@@ -28,9 +28,30 @@ import {
     toId,
 } from '../erp.js';
 
-function requireUserId(req: AuthRequest): number {
+function requireUserId(req: AuthRequest): string | number {
     if (!req.user?.id) throw new Error('Authenticated user is required');
     return req.user.id;
+}
+
+function getAuditUserId(req: AuthRequest): number | undefined {
+    const rawUserId = req.user?.id;
+    if (rawUserId === null || rawUserId === undefined || rawUserId === '') return undefined;
+
+    const numericUserId = typeof rawUserId === 'number' ? rawUserId : Number(rawUserId);
+    if (!Number.isInteger(numericUserId) || numericUserId <= 0) {
+        return undefined;
+    }
+
+    return numericUserId;
+}
+
+function toOptionalDate(value: unknown) {
+    if (value === null || value === undefined || value === '') return null;
+    const parsedDate = value instanceof Date ? value : new Date(String(value));
+    if (Number.isNaN(parsedDate.getTime())) {
+        throw new Error(`Invalid date value: ${value}`);
+    }
+    return parsedDate;
 }
 
 async function getStockLevel(tx: any, itemId: number, warehouseId: number) {
@@ -141,7 +162,7 @@ export const getGRNs = async (_req: AuthRequest, res: Response) => {
 };
 
 export const createGRN = async (req: AuthRequest, res: Response) => {
-    const userId = requireUserId(req);
+    const userId = getAuditUserId(req);
     const { items: receiptItems, poId, warehouseId, idempotencyKey, ...grnData } = req.body;
 
     if (!Array.isArray(receiptItems) || receiptItems.length === 0) {
@@ -164,7 +185,8 @@ export const createGRN = async (req: AuthRequest, res: Response) => {
         const poItemMap = new Map((po.poItems || []).map((line) => [line.id, line]));
 
         const newGRN = await db.transaction(async (tx) => {
-            const grnNo = await generateDocumentNo(tx, 'GRN', new Date(grnData.receivedDate || new Date()));
+            const receivedDate = toOptionalDate(grnData.receivedDate) || new Date();
+            const grnNo = await generateDocumentNo(tx, 'GRN', receivedDate);
             const warnings: string[] = [];
             let baseAmount = 0;
             let taxAmount = 0;
@@ -173,11 +195,12 @@ export const createGRN = async (req: AuthRequest, res: Response) => {
                 ...grnData,
                 grnNo,
                 poId: normalizedPoId,
+                receivedDate,
                 warehouseId: normalizedWarehouseId,
-                receivedBy: userId,
+                receivedBy: userId ?? null,
                 status: 'Posted',
                 postedAt: new Date(),
-                postedBy: userId,
+                postedBy: userId ?? null,
                 warnings,
             }).returning();
 
@@ -238,7 +261,7 @@ export const createGRN = async (req: AuthRequest, res: Response) => {
                         referenceId: grn.id,
                         lineReferenceId: grnLine.id,
                         targetWarehouseId: normalizedWarehouseId,
-                        performedBy: userId,
+                        performedBy: userId ?? null,
                         idempotencyKey: `${idempotencyKey || grnNo}-${index + 1}-receipt`,
                         notes: `GRN ${grnNo} posted at weighted average ${stockState.avgCost}`,
                     });
@@ -282,7 +305,7 @@ export const createGRN = async (req: AuthRequest, res: Response) => {
 };
 
 export const reverseGRN = async (req: AuthRequest, res: Response) => {
-    const userId = requireUserId(req);
+    const userId = getAuditUserId(req);
     const { reason } = req.body;
 
     try {
@@ -320,7 +343,7 @@ export const reverseGRN = async (req: AuthRequest, res: Response) => {
                     referenceType: 'GRN Reversal',
                     referenceId: grn.id,
                     lineReferenceId: line.id,
-                    performedBy: userId,
+                    performedBy: userId ?? null,
                     idempotencyKey: `grn-reversal-${grn.id}-${line.id}`,
                     notes: `Reversal of GRN ${grn.grnNo}: ${reason}`,
                     reversalOfTransactionId: null,
@@ -341,7 +364,7 @@ export const reverseGRN = async (req: AuthRequest, res: Response) => {
             const updated = await optimisticVersionUpdate(tx, grns, grns.id, grn.id, grn.versionNo, {
                 status: 'Reversed',
                 reversedAt: new Date(),
-                reversedBy: userId,
+                reversedBy: userId ?? null,
                 reversalReason: reason,
             });
 
@@ -402,7 +425,7 @@ export const getTransactions = async (_req: AuthRequest, res: Response) => {
 };
 
 export const createStockTransaction = async (req: AuthRequest, res: Response) => {
-    const userId = requireUserId(req);
+    const userId = getAuditUserId(req);
     const {
         itemId,
         type,
@@ -463,7 +486,7 @@ export const createStockTransaction = async (req: AuthRequest, res: Response) =>
                 sourceWarehouseId: normalizedSourceWarehouseId,
                 targetWarehouseId: normalizedTargetWarehouseId,
                 notes,
-                performedBy: userId,
+                performedBy: userId ?? null,
                 idempotencyKey: idempotencyKey || `stock-${normalizedItemId}-${Date.now()}`,
             });
 
@@ -504,7 +527,7 @@ export const getMaterialRequests = async (_req: AuthRequest, res: Response) => {
 };
 
 export const createMaterialRequest = async (req: AuthRequest, res: Response) => {
-    const userId = requireUserId(req);
+    const userId = getAuditUserId(req);
     const { items: requestItems, warehouseId, ...mrData } = req.body;
 
     if (!Array.isArray(requestItems) || requestItems.length === 0) {
@@ -517,10 +540,12 @@ export const createMaterialRequest = async (req: AuthRequest, res: Response) => 
         if (validItems.length !== itemIds.length) return res.status(400).json({ message: 'One or more material request items are invalid' });
 
         const newMR = await db.transaction(async (tx) => {
-            const requestNo = await generateDocumentNo(tx, 'MR', new Date(mrData.date || new Date()));
+            const requestDate = toOptionalDate(mrData.date) || new Date();
+            const requestNo = await generateDocumentNo(tx, 'MR', requestDate);
             const [mr] = await tx.insert(materialRequests).values({
                 ...mrData,
                 requestNo,
+                date: requestDate,
             }).returning();
 
             const insertedLines = await tx.insert(materialRequestItems).values(

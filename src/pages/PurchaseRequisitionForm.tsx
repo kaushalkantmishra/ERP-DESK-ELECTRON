@@ -4,6 +4,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { useAppContext } from '../contexts/AppContext';
 import { Priority, PRItem, PRStatus, PurchaseRequisition } from '../types/models';
 import { procurementService } from '../services/procurementService';
+import { authService } from '../services/authService';
 
 interface DraftLine {
     id: number;
@@ -14,6 +15,14 @@ interface DraftLine {
 
 const emptyLine = (id: number): DraftLine => ({ id, itemId: '', quantity: 1, requiredDate: '' });
 
+function getErrorMessage(error: any, fallback: string) {
+    return error?.response?.data?.message || error?.message || fallback;
+}
+
+function getNumericUserId(userId: string | undefined) {
+    return userId && /^\d+$/.test(userId) ? userId : undefined;
+}
+
 const PurchaseRequisitionForm: React.FC = () => {
     const { id } = useParams();
     const navigate = useNavigate();
@@ -21,20 +30,59 @@ const PurchaseRequisitionForm: React.FC = () => {
     const [record, setRecord] = useState<PurchaseRequisition | null>(null);
     const [isLoading, setIsLoading] = useState(false);
     const [isSubmitting, setIsSubmitting] = useState(false);
+    const [submitAction, setSubmitAction] = useState<'draft' | 'submit' | 'resubmit' | 'approve' | 'reject' | null>(null);
     const [department, setDepartment] = useState(currentUser?.department || '');
     const [priority, setPriority] = useState<Priority>('Medium');
     const [justification, setJustification] = useState('');
     const [lines, setLines] = useState<DraftLine[]>([emptyLine(1)]);
     const [requiredDate, setRequiredDate] = useState(new Date().toISOString().split('T')[0]);
+    const [resolvedRequestorId, setResolvedRequestorId] = useState<string | undefined>(() => getNumericUserId(currentUser?.id));
 
     useEffect(() => {
         if (!id) return;
         void loadPR(id);
     }, [id]);
 
+    useEffect(() => {
+        const numericId = getNumericUserId(currentUser?.id);
+        if (numericId) {
+            setResolvedRequestorId(numericId);
+            return;
+        }
+
+        if (!currentUser?.email) {
+            setResolvedRequestorId(undefined);
+            return;
+        }
+
+        let isCancelled = false;
+
+        async function resolveRequestorId() {
+            try {
+                const users = await authService.getUsers();
+                const matchedUser = users.find((user) => user.email?.toLowerCase() === currentUser.email.toLowerCase());
+                if (!isCancelled) {
+                    setResolvedRequestorId(getNumericUserId(matchedUser?.id));
+                }
+            } catch (error) {
+                console.error('Unable to resolve requestor id for PR creation:', error);
+                if (!isCancelled) {
+                    setResolvedRequestorId(undefined);
+                }
+            }
+        }
+
+        void resolveRequestorId();
+
+        return () => {
+            isCancelled = true;
+        };
+    }, [currentUser]);
+
     const isReadOnly = !!record && !['Draft', 'Rejected'].includes(record.status);
     const canApprove = record?.status === 'Submitted';
     const canResubmit = record?.status === 'Rejected';
+    const canEditRecord = !record || ['Draft', 'Rejected'].includes(record.status);
 
     const lineCount = useMemo(() => lines.filter((line) => line.itemId).length, [lines]);
 
@@ -93,7 +141,7 @@ const PurchaseRequisitionForm: React.FC = () => {
         }
 
         return {
-            requestorId: currentUser?.id,
+            requestorId: resolvedRequestorId,
             department,
             date: new Date().toISOString(),
             priority,
@@ -106,14 +154,20 @@ const PurchaseRequisitionForm: React.FC = () => {
     async function save(status: PRStatus) {
         try {
             setIsSubmitting(true);
+            setSubmitAction(status === 'Draft' ? 'draft' : 'submit');
             if (!currentUser) return;
-            await procurementService.createPR(buildPayload(status));
+            if (record?.id) {
+                await procurementService.updatePR(record.id, buildPayload(status));
+            } else {
+                await procurementService.createPR(buildPayload(status));
+            }
             navigate('/procurement/purchase-requisition');
         } catch (error: any) {
             console.error(error);
-            alert(error?.message || 'Unable to save purchase request');
+            alert(getErrorMessage(error, 'Unable to save purchase request'));
         } finally {
             setIsSubmitting(false);
+            setSubmitAction(null);
         }
     }
 
@@ -121,11 +175,21 @@ const PurchaseRequisitionForm: React.FC = () => {
         if (!record) return;
         try {
             setIsSubmitting(true);
+            setSubmitAction(
+                nextStatus === 'Submitted'
+                    ? 'resubmit'
+                    : nextStatus === 'Approved'
+                        ? 'approve'
+                        : nextStatus === 'Rejected'
+                            ? 'reject'
+                            : null,
+            );
             let rejectionReason: string | undefined;
             if (nextStatus === 'Rejected') {
                 rejectionReason = window.prompt('Enter rejection reason') || undefined;
                 if (!rejectionReason) {
                     setIsSubmitting(false);
+                    setSubmitAction(null);
                     return;
                 }
             }
@@ -133,9 +197,10 @@ const PurchaseRequisitionForm: React.FC = () => {
             navigate('/procurement/purchase-requisition');
         } catch (error: any) {
             console.error(error);
-            alert(error?.message || 'Unable to update requisition');
+            alert(getErrorMessage(error, 'Unable to update requisition'));
         } finally {
             setIsSubmitting(false);
+            setSubmitAction(null);
         }
     }
 
@@ -150,33 +215,33 @@ const PurchaseRequisitionForm: React.FC = () => {
             </div>
 
             <div className="px-4 pb-3 flex items-center gap-3 border-b border-vscode-border">
-                {!id && (
+                {canEditRecord && (
                     <>
                         <button className="btn-secondary flex items-center gap-2" disabled={isSubmitting} onClick={() => void save('Draft')}>
                             <Save size={14} />
-                            <span>{isSubmitting ? 'Saving...' : 'Save Draft'}</span>
+                            <span>{submitAction === 'draft' ? 'Saving...' : record?.id ? 'Update Draft' : 'Save Draft'}</span>
                         </button>
                         <button className="btn-primary flex items-center gap-2" disabled={isSubmitting} onClick={() => void save('Submitted')}>
                             <Send size={14} />
-                            <span>{isSubmitting ? 'Submitting...' : 'Submit For Approval'}</span>
+                            <span>{submitAction === 'submit' ? 'Submitting...' : record?.id ? 'Update And Submit' : 'Submit For Approval'}</span>
                         </button>
                     </>
                 )}
                 {canResubmit && (
                     <button className="btn-primary flex items-center gap-2" disabled={isSubmitting} onClick={() => void handleStatusChange('Submitted')}>
                         <Send size={14} />
-                        <span>Resubmit</span>
+                        <span>{submitAction === 'resubmit' ? 'Submitting...' : 'Resubmit'}</span>
                     </button>
                 )}
                 {canApprove && (
                     <>
                         <button className="bg-green-600 hover:bg-green-700 text-white px-3 py-1.5 rounded flex items-center gap-2 text-sm" disabled={isSubmitting} onClick={() => void handleStatusChange('Approved')}>
                             <CheckCircle size={14} />
-                            <span>Approve</span>
+                            <span>{submitAction === 'approve' ? 'Approving...' : 'Approve'}</span>
                         </button>
                         <button className="bg-red-600 hover:bg-red-700 text-white px-3 py-1.5 rounded flex items-center gap-2 text-sm" disabled={isSubmitting} onClick={() => void handleStatusChange('Rejected')}>
                             <XCircle size={14} />
-                            <span>Reject</span>
+                            <span>{submitAction === 'reject' ? 'Rejecting...' : 'Reject'}</span>
                         </button>
                     </>
                 )}
@@ -250,7 +315,7 @@ const PurchaseRequisitionForm: React.FC = () => {
                             </thead>
                             <tbody>
                                 {lines.map((line) => {
-                                    const item = masterItems.find((entry) => entry.id === line.itemId);
+                                    const item = masterItems.find((entry) => String(entry.id) === String(line.itemId));
                                     return (
                                         <tr key={line.id}>
                                             <td>
