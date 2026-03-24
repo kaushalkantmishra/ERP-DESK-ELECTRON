@@ -88,9 +88,9 @@ export async function buildQuotationTemplateWorkbook(payload: QuotationTemplateP
         ['Quotation Template Instructions'],
         ['1. Do not change RFQ ID, Vendor ID, Item ID, or the sheet names.'],
         ['2. Review the attached PR details and item list exactly as shared by the buyer.'],
-        ['3. Enter your quoted Unit Price only in the Quote sheet.'],
+        ['3. Enter only the required quotation amount details in the Quote sheet.'],
         ['4. Do not edit any other cells in the Quote sheet.'],
-        ['5. Save the file and import it into the ERP Quotations screen.'],
+        ['5. Save the file and reply to the buyer email with the updated Excel attachment.'],
     ]);
     guideSheet.getCell('A1').font = { bold: true, size: 14 };
 

@@ -64,7 +64,7 @@ export async function sendRfqInvitationEmail(params: {
             params.prNo ? `Reference PR: ${params.prNo}` : '',
             `Due Date: ${dueDateText}`,
             '',
-            'The quotation template is attached in Excel format with the PR item list prefilled. Please enter only the quoted price and import it back into the ERP to simulate the quotation response.',
+            'The quotation template is attached in Excel format with the PR item list already filled in. Please update only the required quotation amount fields in the attached Excel file and reply to this email with the updated file.',
             '',
             'Please review the RFQ and submit your quotation before the due date.',
             '',
@@ -75,7 +75,7 @@ export async function sendRfqInvitationEmail(params: {
             <p>Dear ${params.vendor.name},</p>
             <p>You have been invited to submit a quotation for <strong>RFQ ${params.rfqNo}</strong>.</p>
             <p>${params.prNo ? `Reference PR: <strong>${params.prNo}</strong><br/>` : ''}Due Date: <strong>${dueDateText}</strong></p>
-            <p>The quotation template is attached in Excel format with the PR item list already filled. Please enter only the quoted price and import it back into the ERP to simulate the quotation response.</p>
+            <p>The quotation template is attached in Excel format with the PR item list already filled in. Please update only the required quotation amount fields in the attached Excel file and reply to this email with the updated file.</p>
             <p>Please review the RFQ and submit your quotation before the due date.</p>
             <p>Regards,<br/>${fromName}</p>
         `,
