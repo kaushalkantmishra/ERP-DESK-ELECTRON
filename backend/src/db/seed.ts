@@ -11,6 +11,7 @@ async function resetDatabase() {
     await db.delete(schema.invoiceLines);
     await db.delete(schema.invoices);
     await db.delete(schema.stockTransactions);
+    await db.delete(schema.stockReservations);
     await db.delete(schema.stockLevels);
     await db.delete(schema.grnItems);
     await db.delete(schema.grns);
@@ -31,6 +32,19 @@ async function resetDatabase() {
     await db.delete(schema.categories);
     await db.delete(schema.uoms);
     await db.delete(schema.users);
+    await db.delete(schema.documentSequences);
+    await db.delete(schema.systemSettings);
+}
+
+function getAmounts(qty: number, unitPrice: number, taxRate: number) {
+    const baseAmount = Number((qty * unitPrice).toFixed(2));
+    const taxAmount = Number((baseAmount * taxRate / 100).toFixed(2));
+    const totalAmount = Number((baseAmount + taxAmount).toFixed(2));
+    return {
+        baseAmount: baseAmount.toFixed(2),
+        taxAmount: taxAmount.toFixed(2),
+        totalAmount: totalAmount.toFixed(2),
+    };
 }
 
 async function seed() {
@@ -64,6 +78,13 @@ async function seed() {
         { name: 'Farah Finance', email: 'finance@erp.com', password: hashedPassword, role: 'Finance', department: 'Finance' },
         { name: 'Ravi Operations', email: 'dept@erp.com', password: hashedPassword, role: 'Dept', department: 'Operations' },
     ]).returning();
+
+    await db.insert(schema.systemSettings).values([
+        { key: 'priceVariancePct', value: 5 },
+        { key: 'qtyTolerancePct', value: 10 },
+        { key: 'warnOnlyOnTolerance', value: true },
+        { key: 'allowNegativeStock', value: false },
+    ]);
 
     const [mainWarehouse, qualityWarehouse, retailStore] = await db.insert(schema.warehouses).values([
         { name: 'Main Warehouse', code: 'WH-MAIN', location: 'Ground Floor - Receiving Bay', managerId: store.id },
@@ -128,37 +149,50 @@ async function seed() {
         { rfqId: rfq.id, vendorId: vendorPack.id },
     ]);
 
+    const quoteSteelLine1 = getAmounts(600, 70, 18);
+    const quoteSteelLine2 = getAmounts(200, 61, 18);
+    const quotePackLine1 = getAmounts(600, 72, 18);
+    const quotePackLine2 = getAmounts(200, 63, 18);
+    const poDraftLaptopAmounts = getAmounts(3, 52000, 18);
+    const poDraftMonitorAmounts = getAmounts(3, 9800, 18);
+    const poIssuedLaptopAmounts = getAmounts(3, 52000, 18);
+    const poIssuedMonitorAmounts = getAmounts(3, 9800, 18);
+    const grnLaptopAmounts = getAmounts(2, 52000, 18);
+    const grnMonitorAmounts = getAmounts(1, 9800, 18);
+    const invoiceLaptopAmounts = getAmounts(2, 52000, 18);
+    const invoiceMonitorAmounts = getAmounts(1, 9800, 18);
+
     const [quoteSteel, quotePack] = await db.insert(schema.quotations).values([
-        { rfqId: rfq.id, vendorId: vendorSteel.id, totalAmount: '54200.00', deliveryDate: new Date('2026-03-26T00:00:00Z'), submittedDate: new Date('2026-03-13T14:00:00Z'), status: 'Pending' },
-        { rfqId: rfq.id, vendorId: vendorPack.id, totalAmount: '55800.00', deliveryDate: new Date('2026-03-28T00:00:00Z'), submittedDate: new Date('2026-03-13T15:00:00Z'), status: 'Pending' },
+        { rfqId: rfq.id, vendorId: vendorSteel.id, currency: 'AED', baseAmount: '54200.00', taxAmount: '9756.00', totalAmount: '63956.00', deliveryDate: new Date('2026-03-26T00:00:00Z'), submittedDate: new Date('2026-03-13T14:00:00Z'), status: 'Pending', versionNo: 1, notes: 'Seeded vendor quotation' },
+        { rfqId: rfq.id, vendorId: vendorPack.id, currency: 'AED', baseAmount: '55800.00', taxAmount: '10044.00', totalAmount: '65844.00', deliveryDate: new Date('2026-03-28T00:00:00Z'), submittedDate: new Date('2026-03-13T15:00:00Z'), status: 'Pending', versionNo: 1, notes: 'Seeded vendor quotation' },
     ]).returning();
 
     await db.insert(schema.quotationItems).values([
-        { quotationId: quoteSteel.id, itemId: itemByCode['ITM-STEEL-01'].id, qty: '600.00', unitPrice: '70.00' },
-        { quotationId: quoteSteel.id, itemId: itemByCode['ITM-TAPE-48'].id, qty: '200.00', unitPrice: '61.00' },
-        { quotationId: quotePack.id, itemId: itemByCode['ITM-STEEL-01'].id, qty: '600.00', unitPrice: '72.00' },
-        { quotationId: quotePack.id, itemId: itemByCode['ITM-TAPE-48'].id, qty: '200.00', unitPrice: '63.00' },
+        { quotationId: quoteSteel.id, itemId: itemByCode['ITM-STEEL-01'].id, qty: '600.00', unitPrice: '70.00', taxRate: '18.00', ...quoteSteelLine1, awardedQty: '0.00', priceVariancePct: '-2.78' },
+        { quotationId: quoteSteel.id, itemId: itemByCode['ITM-TAPE-48'].id, qty: '200.00', unitPrice: '61.00', taxRate: '18.00', ...quoteSteelLine2, awardedQty: '0.00', priceVariancePct: '10.91' },
+        { quotationId: quotePack.id, itemId: itemByCode['ITM-STEEL-01'].id, qty: '600.00', unitPrice: '72.00', taxRate: '18.00', ...quotePackLine1, awardedQty: '0.00', priceVariancePct: '0.00' },
+        { quotationId: quotePack.id, itemId: itemByCode['ITM-TAPE-48'].id, qty: '200.00', unitPrice: '63.00', taxRate: '18.00', ...quotePackLine2, awardedQty: '0.00', priceVariancePct: '14.55' },
     ]);
 
     const [poDraft, poIssued] = await db.insert(schema.purchaseOrders).values([
-        { poNo: 'PO-2026-0001', prId: prApprovedForPO.id, vendorId: vendorTech.id, date: new Date('2026-03-12T10:00:00Z'), totalAmount: '185400.00', status: 'Draft', deliveryDate: new Date('2026-03-27T00:00:00Z'), versionNo: 1 },
-        { poNo: 'PO-2026-0002', prId: prApprovedForPO.id, vendorId: vendorTech.id, date: new Date('2026-03-08T10:00:00Z'), totalAmount: '113800.00', status: 'Partially Received', deliveryDate: new Date('2026-03-18T00:00:00Z'), issuedAt: new Date('2026-03-08T12:00:00Z'), issuedBy: procurement.id, versionNo: 2 },
+        { poNo: 'PO-2026-0001', prId: prApprovedForPO.id, vendorId: vendorTech.id, date: new Date('2026-03-12T10:00:00Z'), currency: 'AED', baseAmount: '185400.00', taxAmount: '33372.00', totalAmount: '218772.00', priceVariancePct: '0.00', varianceAlert: false, status: 'Draft', deliveryDate: new Date('2026-03-27T00:00:00Z'), versionNo: 1 },
+        { poNo: 'PO-2026-0002', prId: prApprovedForPO.id, vendorId: vendorTech.id, date: new Date('2026-03-08T10:00:00Z'), currency: 'AED', baseAmount: '185400.00', taxAmount: '33372.00', totalAmount: '218772.00', priceVariancePct: '0.00', varianceAlert: false, status: 'Partially Received', deliveryDate: new Date('2026-03-18T00:00:00Z'), issuedAt: new Date('2026-03-08T12:00:00Z'), issuedBy: procurement.id, versionNo: 2 },
     ]).returning();
 
     const [poDraftLaptop, poDraftMonitor, poIssuedLaptop, poIssuedMonitor] = await db.insert(schema.poItems).values([
-        { poId: poDraft.id, itemId: itemByCode['ITM-LAP-15'].id, orderedQty: '3.00', unitPrice: '52000.00', receivedQty: '0.00', acceptedQty: '0.00', invoicedQty: '0.00', cancelledQty: '0.00' },
-        { poId: poDraft.id, itemId: itemByCode['ITM-MON-24'].id, orderedQty: '3.00', unitPrice: '9800.00', receivedQty: '0.00', acceptedQty: '0.00', invoicedQty: '0.00', cancelledQty: '0.00' },
-        { poId: poIssued.id, itemId: itemByCode['ITM-LAP-15'].id, orderedQty: '3.00', unitPrice: '52000.00', receivedQty: '2.00', acceptedQty: '2.00', invoicedQty: '2.00', cancelledQty: '0.00' },
-        { poId: poIssued.id, itemId: itemByCode['ITM-MON-24'].id, orderedQty: '3.00', unitPrice: '9800.00', receivedQty: '1.00', acceptedQty: '1.00', invoicedQty: '1.00', cancelledQty: '0.00' },
+        { poId: poDraft.id, itemId: itemByCode['ITM-LAP-15'].id, orderedQty: '3.00', unitPrice: '52000.00', taxRate: '18.00', ...poDraftLaptopAmounts, receivedQty: '0.00', acceptedQty: '0.00', invoicedQty: '0.00', cancelledQty: '0.00', paidQty: '0.00', priceVariancePct: '0.00' },
+        { poId: poDraft.id, itemId: itemByCode['ITM-MON-24'].id, orderedQty: '3.00', unitPrice: '9800.00', taxRate: '18.00', ...poDraftMonitorAmounts, receivedQty: '0.00', acceptedQty: '0.00', invoicedQty: '0.00', cancelledQty: '0.00', paidQty: '0.00', priceVariancePct: '0.00' },
+        { poId: poIssued.id, itemId: itemByCode['ITM-LAP-15'].id, orderedQty: '3.00', unitPrice: '52000.00', taxRate: '18.00', ...poIssuedLaptopAmounts, receivedQty: '2.00', acceptedQty: '2.00', invoicedQty: '2.00', cancelledQty: '0.00', paidQty: '0.00', priceVariancePct: '0.00' },
+        { poId: poIssued.id, itemId: itemByCode['ITM-MON-24'].id, orderedQty: '3.00', unitPrice: '9800.00', taxRate: '18.00', ...poIssuedMonitorAmounts, receivedQty: '1.00', acceptedQty: '1.00', invoicedQty: '1.00', cancelledQty: '0.00', paidQty: '0.00', priceVariancePct: '0.00' },
     ]).returning();
 
     const [grnPosted] = await db.insert(schema.grns).values([
-        { grnNo: 'GRN-2026-0001', poId: poIssued.id, receivedDate: new Date('2026-03-14T11:00:00Z'), receivedBy: store.id, warehouseId: mainWarehouse.id, status: 'Posted', postedAt: new Date('2026-03-14T11:30:00Z'), postedBy: store.id },
+        { grnNo: 'GRN-2026-0001', poId: poIssued.id, receivedDate: new Date('2026-03-14T11:00:00Z'), receivedBy: store.id, warehouseId: mainWarehouse.id, baseAmount: '113800.00', taxAmount: '20484.00', totalAmount: '134284.00', warnings: null, status: 'Posted', postedAt: new Date('2026-03-14T11:30:00Z'), postedBy: store.id, versionNo: 1 },
     ]).returning();
 
     await db.insert(schema.grnItems).values([
-        { grnId: grnPosted.id, poItemId: poIssuedLaptop.id, itemId: itemByCode['ITM-LAP-15'].id, receivedQty: '2.00', acceptedQty: '2.00', rejectedQty: '0.00', disposition: 'Accepted' },
-        { grnId: grnPosted.id, poItemId: poIssuedMonitor.id, itemId: itemByCode['ITM-MON-24'].id, receivedQty: '1.00', acceptedQty: '1.00', rejectedQty: '0.00', disposition: 'Accepted' },
+        { grnId: grnPosted.id, poItemId: poIssuedLaptop.id, itemId: itemByCode['ITM-LAP-15'].id, receivedQty: '2.00', acceptedQty: '2.00', rejectedQty: '0.00', unitCost: '52000.00', ...grnLaptopAmounts, disposition: 'Accepted' },
+        { grnId: grnPosted.id, poItemId: poIssuedMonitor.id, itemId: itemByCode['ITM-MON-24'].id, receivedQty: '1.00', acceptedQty: '1.00', rejectedQty: '0.00', unitCost: '9800.00', ...grnMonitorAmounts, disposition: 'Accepted' },
     ]);
 
     await db.insert(schema.stockTransactions).values([
@@ -170,18 +204,18 @@ async function seed() {
     await db.update(schema.stockLevels).set({ quantity: '8.00', updatedAt: new Date(), versionNo: 2 }).where(eq(schema.stockLevels.itemId, itemByCode['ITM-MON-24'].id));
 
     const [invoiceApproved, invoicePaid] = await db.insert(schema.invoices).values([
-        { invoiceNo: 'INV-2026-0001', vendorInvoiceNo: 'TSI-4451', vendorId: vendorTech.id, poId: poIssued.id, date: new Date('2026-03-15T10:00:00Z'), dueDate: new Date('2026-04-14T00:00:00Z'), amount: '113800.00', matchedAmount: '113800.00', paidAmount: '0.00', balanceAmount: '113800.00', status: 'Approved', remarks: 'Partial delivery invoice awaiting payment', enteredBy: finance.id, approvedAt: new Date('2026-03-15T15:00:00Z'), approvedBy: finance.id },
-        { invoiceNo: 'INV-2026-0002', vendorInvoiceNo: 'OEC-2201', vendorId: vendorOffice.id, poId: poDraft.id, date: new Date('2026-03-05T10:00:00Z'), dueDate: new Date('2026-03-20T00:00:00Z'), amount: '7250.00', matchedAmount: '7250.00', paidAmount: '7250.00', balanceAmount: '0.00', status: 'Paid', remarks: 'Starter paid invoice for finance screen', enteredBy: finance.id, approvedAt: new Date('2026-03-06T12:00:00Z'), approvedBy: finance.id },
+        { invoiceNo: 'INV-2026-0001', vendorInvoiceNo: 'TSI-4451', vendorId: vendorTech.id, poId: poIssued.id, date: new Date('2026-03-15T10:00:00Z'), dueDate: new Date('2026-04-14T00:00:00Z'), currency: 'AED', baseAmount: '113800.00', taxAmount: '20484.00', amount: '134284.00', matchedAmount: '134284.00', paidAmount: '0.00', balanceAmount: '134284.00', status: 'Approved', remarks: 'Partial delivery invoice awaiting payment', enteredBy: finance.id, approvedAt: new Date('2026-03-15T15:00:00Z'), approvedBy: finance.id, versionNo: 1 },
+        { invoiceNo: 'INV-2026-0002', vendorInvoiceNo: 'OEC-2201', vendorId: vendorOffice.id, poId: poDraft.id, date: new Date('2026-03-05T10:00:00Z'), dueDate: new Date('2026-03-20T00:00:00Z'), currency: 'AED', baseAmount: '7250.00', taxAmount: '0.00', amount: '7250.00', matchedAmount: '7250.00', paidAmount: '7250.00', balanceAmount: '0.00', status: 'Paid', remarks: 'Starter paid invoice for finance screen', enteredBy: finance.id, approvedAt: new Date('2026-03-06T12:00:00Z'), approvedBy: finance.id, versionNo: 1 },
     ]).returning();
 
     await db.insert(schema.invoiceLines).values([
-        { invoiceId: invoiceApproved.id, poItemId: poIssuedLaptop.id, itemId: itemByCode['ITM-LAP-15'].id, quantity: '2.00', unitPrice: '52000.00', lineAmount: '104000.00' },
-        { invoiceId: invoiceApproved.id, poItemId: poIssuedMonitor.id, itemId: itemByCode['ITM-MON-24'].id, quantity: '1.00', unitPrice: '9800.00', lineAmount: '9800.00' },
-        { invoiceId: invoicePaid.id, poItemId: poDraftMonitor.id, itemId: itemByCode['ITM-MON-24'].id, quantity: '1.00', unitPrice: '7250.00', lineAmount: '7250.00' },
+        { invoiceId: invoiceApproved.id, poItemId: poIssuedLaptop.id, itemId: itemByCode['ITM-LAP-15'].id, quantity: '2.00', unitPrice: '52000.00', taxRate: '18.00', baseAmount: invoiceLaptopAmounts.baseAmount, taxAmount: invoiceLaptopAmounts.taxAmount, totalAmount: invoiceLaptopAmounts.totalAmount, lineAmount: invoiceLaptopAmounts.totalAmount },
+        { invoiceId: invoiceApproved.id, poItemId: poIssuedMonitor.id, itemId: itemByCode['ITM-MON-24'].id, quantity: '1.00', unitPrice: '9800.00', taxRate: '18.00', baseAmount: invoiceMonitorAmounts.baseAmount, taxAmount: invoiceMonitorAmounts.taxAmount, totalAmount: invoiceMonitorAmounts.totalAmount, lineAmount: invoiceMonitorAmounts.totalAmount },
+        { invoiceId: invoicePaid.id, poItemId: poDraftMonitor.id, itemId: itemByCode['ITM-MON-24'].id, quantity: '1.00', unitPrice: '7250.00', taxRate: '0.00', baseAmount: '7250.00', taxAmount: '0.00', totalAmount: '7250.00', lineAmount: '7250.00' },
     ]);
 
     const [paymentPaid] = await db.insert(schema.payments).values([
-        { paymentNo: 'PAY-2026-0001', vendorId: vendorOffice.id, paymentDate: new Date('2026-03-07T10:00:00Z'), amount: '7250.00', method: 'Bank Transfer', status: 'Posted', referenceNo: 'UTR0099123', remarks: 'Seed payment posted for paid invoice', createdBy: finance.id, postedAt: new Date('2026-03-07T10:15:00Z'), postedBy: finance.id },
+        { paymentNo: 'PAY-2026-0001', vendorId: vendorOffice.id, paymentDate: new Date('2026-03-07T10:00:00Z'), baseAmount: '7250.00', taxAmount: '0.00', totalAmount: '7250.00', amount: '7250.00', method: 'Bank Transfer', status: 'Posted', referenceNo: 'UTR0099123', remarks: 'Seed payment posted for paid invoice', createdBy: finance.id, postedAt: new Date('2026-03-07T10:15:00Z'), postedBy: finance.id, versionNo: 1 },
     ]).returning();
 
     await db.insert(schema.paymentAllocations).values([
