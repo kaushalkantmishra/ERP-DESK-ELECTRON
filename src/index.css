@@ -275,6 +275,36 @@
     color: var(--vscode-text-muted);
   }
 
+  .tab-context-menu {
+    min-width: 12rem;
+    background-color: var(--vscode-sidebar);
+    border: 1px solid var(--vscode-border);
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.18);
+    padding: 0.25rem;
+    z-index: 1000;
+  }
+
+  .tab-context-menu-item {
+    width: 100%;
+    text-align: left;
+    border: 0;
+    background: transparent;
+    color: var(--vscode-text);
+    font-size: 0.875rem;
+    padding: 0.5rem 0.75rem;
+    cursor: pointer;
+    transition: background-color 0.15s;
+  }
+
+  .tab-context-menu-item:hover:not(:disabled) {
+    background-color: var(--vscode-hover);
+  }
+
+  .tab-context-menu-item:disabled {
+    color: var(--vscode-text-muted);
+    cursor: not-allowed;
+  }
+
   /* Sidebar item styles */
   .sidebar-item {
     display: flex;
@@ -306,7 +336,6 @@
     margin-bottom: 0.25rem;
     color: var(--vscode-text);
   }
-
   .form-select {
     background-color: var(--vscode-input-bg);
     border: 1px solid var(--vscode-input-border);

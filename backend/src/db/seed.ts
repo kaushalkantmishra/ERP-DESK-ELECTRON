@@ -1,39 +1,43 @@
 import bcrypt from 'bcryptjs';
-import { eq } from 'drizzle-orm';
+import { sql } from 'drizzle-orm';
 import { db } from './drizzle.js';
 import * as schema from './schema.js';
 
 const DEFAULT_PASSWORD = 'admin123';
 
 async function resetDatabase() {
-    await db.delete(schema.paymentAllocations);
-    await db.delete(schema.payments);
-    await db.delete(schema.invoiceLines);
-    await db.delete(schema.invoices);
-    await db.delete(schema.stockTransactions);
-    await db.delete(schema.stockReservations);
-    await db.delete(schema.stockLevels);
-    await db.delete(schema.grnItems);
-    await db.delete(schema.grns);
-    await db.delete(schema.poItems);
-    await db.delete(schema.purchaseOrders);
-    await db.delete(schema.quotationItems);
-    await db.delete(schema.quotations);
-    await db.delete(schema.rfqVendors);
-    await db.delete(schema.rfqs);
-    await db.delete(schema.prItems);
-    await db.delete(schema.purchaseRequisitions);
-    await db.delete(schema.materialRequestItems);
-    await db.delete(schema.materialRequests);
-    await db.delete(schema.activityLogs);
-    await db.delete(schema.items);
-    await db.delete(schema.vendors);
-    await db.delete(schema.warehouses);
-    await db.delete(schema.categories);
-    await db.delete(schema.uoms);
-    await db.delete(schema.users);
-    await db.delete(schema.documentSequences);
-    await db.delete(schema.systemSettings);
+    await db.execute(sql`
+        TRUNCATE TABLE
+            payment_allocations,
+            payments,
+            invoice_lines,
+            invoices,
+            stock_transactions,
+            stock_reservations,
+            stock_levels,
+            grn_items,
+            grns,
+            po_items,
+            purchase_orders,
+            quotation_items,
+            quotations,
+            rfq_vendors,
+            rfqs,
+            pr_items,
+            purchase_requisitions,
+            material_request_items,
+            material_requests,
+            activity_logs,
+            items,
+            vendors,
+            warehouses,
+            categories,
+            uoms,
+            users,
+            document_sequences,
+            system_settings
+        RESTART IDENTITY CASCADE
+    `);
 }
 
 function getAmounts(qty: number, unitPrice: number, taxRate: number) {

@@ -202,6 +202,21 @@ const VendorMaster = () => {
                             />
                         </div>
                         <div className="form-group">
+                            <label className="form-label">Rating</label>
+                            <select
+                                className="form-select w-full"
+                                value={formVendor.rating}
+                                disabled={isViewMode}
+                                onChange={e => setFormVendor({ ...formVendor, rating: Number(e.target.value) })}
+                            >
+                                <option value={1}>1 Star</option>
+                                <option value={2}>2 Stars</option>
+                                <option value={3}>3 Stars</option>
+                                <option value={4}>4 Stars</option>
+                                <option value={5}>5 Stars</option>
+                            </select>
+                        </div>
+                        <div className="form-group">
                             <label className="form-label">Tax ID / VAT</label>
                             <input
                                 type="text"

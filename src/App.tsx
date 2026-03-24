@@ -66,6 +66,14 @@ function App() {
     }
   };
 
+  const closeAllTabs = () => {
+    const fallbackTab = tabs.find((entry) => !entry.closable) ?? tabs[0];
+    if (!fallbackTab) return;
+
+    setTabs([fallbackTab]);
+    setActiveTabId(fallbackTab.id);
+  };
+
   return (
     <AppProvider>
       <ThemeProvider>
@@ -81,7 +89,13 @@ function App() {
                     <div className="flex flex-1 overflow-hidden">
                       <Sidebar collapsed={sidebarCollapsed} onToggle={() => setSidebarCollapsed(!sidebarCollapsed)} onNavigate={addTab} />
                       <div className="flex-1 flex flex-col overflow-hidden">
-                        <TabBar tabs={tabs} activeTabId={activeTabId} onTabClick={setActiveTabId} onTabClose={closeTab} />
+                        <TabBar
+                          tabs={tabs}
+                          activeTabId={activeTabId}
+                          onTabClick={setActiveTabId}
+                          onTabClose={closeTab}
+                          onCloseAllTabs={closeAllTabs}
+                        />
                         <div className="flex-1 overflow-auto bg-vscode-bg">
                           <Routes>
                             <Route path="/" element={<Navigate to="/dashboard" replace />} />
