@@ -50,7 +50,9 @@ const PurchaseRequisitionForm: React.FC = () => {
             return;
         }
 
-        if (!currentUser?.email) {
+        const currentUserEmail = currentUser?.email?.toLowerCase();
+
+        if (!currentUserEmail) {
             setResolvedRequestorId(undefined);
             return;
         }
@@ -60,7 +62,7 @@ const PurchaseRequisitionForm: React.FC = () => {
         async function resolveRequestorId() {
             try {
                 const users = await authService.getUsers();
-                const matchedUser = users.find((user) => user.email?.toLowerCase() === currentUser.email.toLowerCase());
+                const matchedUser = users.find((user) => user.email?.toLowerCase() === currentUserEmail);
                 if (!isCancelled) {
                     setResolvedRequestorId(getNumericUserId(matchedUser?.id));
                 }

@@ -39,8 +39,11 @@ const PurchaseOrderList: React.FC = () => {
         }
     }
 
-    const approvedPRs = useMemo(() => prs.filter((pr) => pr.status === 'Approved'), [prs]);
-    const selectedPR = approvedPRs.find((pr) => pr.id === selectedPrId);
+    const approvedPRs = useMemo(
+        () => prs.filter((pr) => pr.status === 'Approved' && (pr.prItems || []).some((line: any) => Number(line.openQty ?? line.quantity) > 0)),
+        [prs],
+    );
+    const selectedPR = approvedPRs.find((pr) => String(pr.id) === selectedPrId);
 
     useEffect(() => {
         if (!selectedPR) return;
@@ -63,11 +66,13 @@ const PurchaseOrderList: React.FC = () => {
                 prId: selectedPR.id,
                 vendorId,
                 deliveryDate: new Date(deliveryDate).toISOString(),
-                items: (selectedPR.prItems || []).map((line) => ({
+                items: (selectedPR.prItems || [])
+                    .filter((line: any) => Number(line.openQty ?? line.quantity) > 0)
+                    .map((line: any) => ({
                     itemId: line.itemId,
-                    orderedQty: Number(line.quantity),
+                    orderedQty: Number(line.openQty ?? line.quantity),
                     unitPrice: Number(priceMap[line.itemId] || 0),
-                })),
+                    })),
             });
             setIsCreating(false);
             setSelectedPrId('');
@@ -125,7 +130,7 @@ const PurchaseOrderList: React.FC = () => {
                             <select className="input-vscode w-full" value={selectedPrId} onChange={(e) => setSelectedPrId(e.target.value)}>
                                 <option value="">Select approved PR</option>
                                 {approvedPRs.map((pr) => (
-                                    <option key={pr.id} value={pr.id}>{pr.prNo} - {pr.department}</option>
+                                    <option key={pr.id} value={String(pr.id)}>{pr.prNo} - {pr.department}</option>
                                 ))}
                             </select>
                         </div>
@@ -155,10 +160,13 @@ const PurchaseOrderList: React.FC = () => {
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    {(selectedPR.prItems || []).map((line) => (
+                                    {(selectedPR.prItems || []).filter((line: any) => Number(line.openQty ?? line.quantity) > 0).map((line: any) => (
                                         <tr key={line.id || line.itemId}>
                                             <td>{line.item?.code || line.itemId} - {line.item?.name || 'Item'}</td>
-                                            <td>{Number(line.quantity)}</td>
+                                            <td>
+                                                <div>{Number(line.openQty ?? line.quantity).toFixed(2)} {line.item?.uom || ''}</div>
+                                                <div className="text-xs text-vscode-text-muted">Requested: {Number(line.quantity).toFixed(2)}</div>
+                                            </td>
                                             <td>
                                                 <input
                                                     type="number"

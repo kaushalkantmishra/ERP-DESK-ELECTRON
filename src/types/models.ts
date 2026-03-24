@@ -114,6 +114,8 @@ export interface PRItem {
     itemId: string;
     quantity: number;
     requiredDate: string;
+    sourcedQty?: number;
+    openQty?: number;
     item?: Item;
 }
 

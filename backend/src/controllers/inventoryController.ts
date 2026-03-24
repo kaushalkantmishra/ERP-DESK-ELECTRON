@@ -245,7 +245,8 @@ export const createGRN = async (req: AuthRequest, res: Response) => {
                 }).returning();
 
                 await tx.update(poItems).set({
-                    receivedQty: roundMoney(currentReceived + receivedQty).toFixed(2),
+                    // Only accepted quantity completes the PO receipt balance.
+                    receivedQty: roundMoney(currentReceived + acceptedQty).toFixed(2),
                     acceptedQty: roundMoney(toDecimal(poLine.acceptedQty) + acceptedQty).toFixed(2),
                 }).where(eq(poItems.id, poLine.id));
 

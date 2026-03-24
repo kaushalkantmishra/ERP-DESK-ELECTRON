@@ -50,8 +50,6 @@ export async function sendRfqInvitationEmail(params: {
         return { sent: false, skipped: true, reason: 'Vendor email is missing' };
     }
 
-    const appUrl = process.env.APP_BASE_URL || 'http://localhost:5173';
-    const rfqLink = `${appUrl}/procurement/rfq/${params.rfqId}`;
     const dueDateText = params.dueDate ? params.dueDate.toLocaleDateString() : 'Not specified';
     const fromName = process.env.SMTP_FROM_NAME || 'ERP Procurement';
 
@@ -65,7 +63,6 @@ export async function sendRfqInvitationEmail(params: {
             `You have been invited to submit a quotation for RFQ ${params.rfqNo}.`,
             params.prNo ? `Reference PR: ${params.prNo}` : '',
             `Due Date: ${dueDateText}`,
-            `View RFQ: ${rfqLink}`,
             '',
             'The quotation template is attached in Excel format with the PR item list prefilled. Please enter only the quoted price and import it back into the ERP to simulate the quotation response.',
             '',
@@ -78,7 +75,6 @@ export async function sendRfqInvitationEmail(params: {
             <p>Dear ${params.vendor.name},</p>
             <p>You have been invited to submit a quotation for <strong>RFQ ${params.rfqNo}</strong>.</p>
             <p>${params.prNo ? `Reference PR: <strong>${params.prNo}</strong><br/>` : ''}Due Date: <strong>${dueDateText}</strong></p>
-            <p><a href="${rfqLink}">Open RFQ</a></p>
             <p>The quotation template is attached in Excel format with the PR item list already filled. Please enter only the quoted price and import it back into the ERP to simulate the quotation response.</p>
             <p>Please review the RFQ and submit your quotation before the due date.</p>
             <p>Regards,<br/>${fromName}</p>
@@ -100,6 +96,11 @@ export async function sendPurchaseOrderEmail(params: {
     rfqNo?: string | null;
     quotationId?: number | null;
     requestConfirmation?: boolean;
+    attachment?: {
+        filename: string;
+        content: Buffer;
+        contentType?: string;
+    };
     deliveryDate?: Date | null;
     totalAmount?: number;
     items: Array<{
@@ -127,7 +128,7 @@ export async function sendPurchaseOrderEmail(params: {
         : `Please find the purchase order ${params.poNo}.`;
     const closingText = params.requestConfirmation
         ? 'Please confirm acceptance of this purchase order.'
-        : 'Please review the purchase order details below.';
+        : 'Please supply the items as per the issued purchase order details below.';
 
     const itemRowsHtml = params.items.map((item) => `
         <tr>
@@ -186,7 +187,13 @@ export async function sendPurchaseOrderEmail(params: {
             </table>
             <p>Regards,<br/>${fromName}</p>
         `,
+        attachments: params.attachment ? [{
+            filename: params.attachment.filename,
+            content: params.attachment.content,
+            contentType: params.attachment.contentType || 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        }] : undefined,
     });
 
     return { sent: true, skipped: false };
 }
+

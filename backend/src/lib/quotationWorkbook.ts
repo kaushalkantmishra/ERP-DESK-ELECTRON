@@ -39,6 +39,24 @@ export type ImportedQuotationWorkbook = {
     }>;
 };
 
+export type PurchaseOrderWorkbookPayload = {
+    poNo: string;
+    vendorName: string;
+    prNo?: string | null;
+    rfqNo?: string | null;
+    deliveryDate?: Date | null;
+    totalAmount?: number;
+    lines: Array<{
+        itemCode?: string | null;
+        itemName: string;
+        uom?: string | null;
+        quantity: number;
+        unitPrice: number;
+        taxRate?: number;
+        totalAmount?: number;
+    }>;
+};
+
 function formatDate(date?: Date | null) {
     return date ? date.toISOString().slice(0, 10) : '';
 }

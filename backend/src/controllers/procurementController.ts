@@ -12,6 +12,7 @@ import {
     rfqs,
     rfqVendors,
     stockReservations,
+    uoms,
     vendors,
 } from '../db/schema.js';
 import type { AuthRequest } from '../middleware/auth.js';
@@ -99,6 +100,23 @@ function toOptionalDate(value: unknown) {
 async function getActiveItemsByIds(itemIds: number[]) {
     if (itemIds.length === 0) return [];
     return db.select().from(items).where(inArray(items.id, itemIds));
+}
+
+async function getItemsWithUomByIds(itemIds: number[]) {
+    if (itemIds.length === 0) return [];
+
+    return db.select({
+        id: items.id,
+        code: items.code,
+        name: items.name,
+        price: items.price,
+        active: items.active,
+        taxRate: items.taxRate,
+        uom: uoms.code,
+    })
+        .from(items)
+        .leftJoin(uoms, eq(items.uomId, uoms.id))
+        .where(inArray(items.id, itemIds));
 }
 
 function enrichPOLines(po: any) {
@@ -587,6 +605,10 @@ export const createRFQ = async (req: AuthRequest, res: Response) => {
         if (invitedVendors.length !== normalizedVendorIds.length) return res.status(400).json({ message: 'One or more selected vendors are invalid' });
         if (invitedVendors.some((vendor) => !vendor.active)) return res.status(400).json({ message: 'Inactive vendors cannot be invited to RFQ' });
 
+        const prItemIds = [...new Set((pr.prItems || []).map((line) => line.itemId))];
+        const itemDetails = await getItemsWithUomByIds(prItemIds);
+        const itemDetailMap = new Map(itemDetails.map((item) => [item.id, item]));
+
         const newRFQ = await db.transaction(async (tx) => {
             const dueDate = toOptionalDate(rfqData.dueDate);
             const rfqNo = await generateDocumentNo(tx, 'RFQ', dueDate || new Date());
@@ -638,7 +660,7 @@ export const createRFQ = async (req: AuthRequest, res: Response) => {
                             itemId: line.itemId,
                             itemCode: line.item?.code,
                             itemName: line.item?.name || `Item ${line.itemId}`,
-                            uom: null,
+                            uom: itemDetailMap.get(line.itemId)?.uom || null,
                             requestedQty: toDecimal(line.quantity),
                             openQty: toDecimal(line.quantity),
                             requiredDate: line.requiredDate,
@@ -856,7 +878,7 @@ export const createPO = async (req: AuthRequest, res: Response) => {
     try {
         const normalizedVendorId = toId(vendorId, 'vendor id');
         let normalizedPrId = prId ? toId(prId, 'purchase requisition id') : null;
-        const normalizedRfqId = rfqId ? toId(rfqId, 'rfq id') : null;
+        let normalizedRfqId = rfqId ? toId(rfqId, 'rfq id') : null;
         const normalizedQuotationId = quotationId ? toId(quotationId, 'quotation id') : null;
         const vendor = await db.query.vendors.findFirst({ where: eq(vendors.id, normalizedVendorId) });
         if (!vendor) return res.status(404).json({ message: 'Vendor not found' });
@@ -869,8 +891,10 @@ export const createPO = async (req: AuthRequest, res: Response) => {
                 with: { quotationItems: { with: { item: true } }, rfq: { with: { purchaseRequisition: true } }, vendor: true },
             });
             if (!quotation) return res.status(404).json({ message: 'Quotation not found' });
+            if (quotation.status !== 'Pending') return res.status(400).json({ message: `Quotation is already ${quotation.status.toLowerCase()} and cannot create another PO` });
             if (quotation.vendorId !== normalizedVendorId) return res.status(400).json({ message: 'Quotation vendor does not match selected vendor' });
             if (normalizedRfqId && quotation.rfqId !== normalizedRfqId) return res.status(400).json({ message: 'Quotation RFQ does not match selected RFQ' });
+            if (!normalizedRfqId) normalizedRfqId = quotation.rfqId;
             if (!normalizedPrId) {
                 normalizedPrId = quotation.rfq?.purchaseRequisition?.id || quotation.rfq?.prId || null;
             }
@@ -880,10 +904,22 @@ export const createPO = async (req: AuthRequest, res: Response) => {
         if (normalizedPrId) {
             pr = await db.query.purchaseRequisitions.findFirst({
                 where: eq(purchaseRequisitions.id, normalizedPrId),
-                with: { prItems: true },
+                with: { prItems: true, purchaseOrders: { with: { poItems: true } } },
             });
             if (!pr) return res.status(404).json({ message: 'PR not found' });
-            if (pr.status !== 'Approved') return res.status(400).json({ message: 'PO can only be created from an approved PR' });
+            if (pr.status !== 'Approved') {
+                const activePurchaseOrders = (pr.purchaseOrders || []).filter((po: any) => po.status !== 'Cancelled');
+                if (pr.status === 'PO Created' && activePurchaseOrders.length > 0) {
+                    const poNumbers = activePurchaseOrders.map((po: any) => po.poNo).filter(Boolean);
+                    return res.status(400).json({
+                        message: `PO already exists for PR ${pr.prNo}. Current PR status is ${pr.status}${poNumbers.length ? ` (${poNumbers.join(', ')})` : ''}.`,
+                    });
+                }
+
+                return res.status(400).json({
+                    message: `Cannot create PO because PR ${pr.prNo} is currently ${pr.status}. Only Approved PR can create a new PO.`,
+                });
+            }
         }
 
         const settings = await db.transaction((tx) => getSettings(tx));
@@ -891,6 +927,16 @@ export const createPO = async (req: AuthRequest, res: Response) => {
         const masterItems = await getActiveItemsByIds(itemIds);
         const itemMap = new Map(masterItems.map((item) => [item.id, item]));
         const prItemMap = new Map<number, any>((pr?.prItems || []).map((line: any) => [line.itemId, line]));
+        const sourcedByItem = new Map<number, number>();
+
+        for (const existingPo of pr?.purchaseOrders || []) {
+            if (existingPo.status === 'Cancelled') continue;
+            for (const line of existingPo.poItems || []) {
+                sourcedByItem.set(line.itemId, roundMoney((sourcedByItem.get(line.itemId) || 0) + toDecimal(line.orderedQty)));
+            }
+        }
+
+        const currentRequestQtyByItem = new Map<number, number>();
 
         let baseAmount = 0;
         let taxAmount = 0;
@@ -910,6 +956,16 @@ export const createPO = async (req: AuthRequest, res: Response) => {
             const prLine = prItemMap.get(normalizedItemId);
             if (prLine) {
                 const requestedQty = toDecimal(prLine.quantity);
+                const alreadySourcedQty = sourcedByItem.get(normalizedItemId) || 0;
+                const currentRequestedQty = roundMoney((currentRequestQtyByItem.get(normalizedItemId) || 0) + orderedQty);
+                const remainingQty = roundMoney(Math.max(0, requestedQty - alreadySourcedQty));
+
+                currentRequestQtyByItem.set(normalizedItemId, currentRequestedQty);
+
+                if (currentRequestedQty > remainingQty) {
+                    throw new Error(`PO quantity for item ${item.code} exceeds the remaining approved PR quantity (${remainingQty.toFixed(2)})`);
+                }
+
                 enforceTolerance(orderedQty, requestedQty, settings.qtyTolerancePct, `PO quantity for item ${item.code}`, settings.warnOnlyOnTolerance);
             }
 
@@ -979,25 +1035,25 @@ export const createPO = async (req: AuthRequest, res: Response) => {
                 payload: { prId: normalizedPrId, vendorId: normalizedVendorId, totalAmount, varianceAlert, rfqId: normalizedRfqId, quotationId: normalizedQuotationId },
             });
 
+            if (normalizedQuotationId) {
+                await tx.update(quotations)
+                    .set({ status: 'Accepted', versionNo: quotation.versionNo + 1 })
+                    .where(and(eq(quotations.id, normalizedQuotationId), eq(quotations.versionNo, quotation.versionNo)));
+
+                await tx.update(quotations)
+                    .set({ status: 'Rejected' })
+                    .where(and(eq(quotations.rfqId, quotation.rfqId), eq(quotations.status, 'Pending')));
+            }
+
+            if (pr && pr.status === 'Approved') {
+                await optimisticVersionUpdate(tx, purchaseRequisitions, purchaseRequisitions.id, pr.id, pr.versionNo, {
+                    status: 'PO Created',
+                });
+            }
+
             return po;
         });
 
-        const poDeliveryDate = deliveryDate ? new Date(deliveryDate) : null;
-        try {
-            await sendPurchaseOrderEmail({
-                poNo: newPO.poNo,
-                vendor,
-                prNo: pr?.prNo || null,
-                rfqNo: quotation?.rfq?.rfqNo || null,
-                quotationId: normalizedQuotationId,
-                requestConfirmation: !!normalizedQuotationId,
-                deliveryDate: poDeliveryDate,
-                totalAmount,
-                items: poEmailItems,
-            });
-        } catch (emailError) {
-            console.error('Failed to send purchase order email:', emailError);
-        }
 
         res.status(201).json(newPO);
     } catch (error: any) {
@@ -1013,7 +1069,12 @@ export const updatePOStatus = async (req: AuthRequest, res: Response) => {
     try {
         const po = await db.query.purchaseOrders.findFirst({
             where: eq(purchaseOrders.id, toId(String(req.params.id), 'purchase order id')),
-            with: { poItems: true },
+            with: {
+                vendor: true,
+                pr: true,
+                rfq: true,
+                poItems: { with: { item: true } },
+            },
         });
         if (!po) return res.status(404).json({ message: 'PO not found' });
 
@@ -1060,6 +1121,29 @@ export const updatePOStatus = async (req: AuthRequest, res: Response) => {
                 payload: { from: po.status, to: status },
             });
         });
+
+        if (status === 'Issued' && po.vendor) {
+            try {
+                await sendPurchaseOrderEmail({
+                    poNo: po.poNo,
+                    vendor: po.vendor,
+                    prNo: po.pr?.prNo || null,
+                    rfqNo: po.rfq?.rfqNo || null,
+                    deliveryDate: po.deliveryDate,
+                    totalAmount: toDecimal(po.totalAmount),
+                    items: (po.poItems || []).map((line: any) => ({
+                        itemCode: line.item?.code || null,
+                        itemName: line.item?.name || `Item ${line.itemId}`,
+                        quantity: toDecimal(line.orderedQty),
+                        unitPrice: toDecimal(line.unitPrice),
+                        taxRate: toDecimal(line.taxRate),
+                        totalAmount: toDecimal(line.totalAmount),
+                    })),
+                });
+            } catch (emailError) {
+                console.error('Failed to send issued purchase order email:', emailError);
+            }
+        }
 
         res.json({ message: 'PO status updated' });
     } catch (error: any) {
