@@ -10,6 +10,11 @@ interface DraftInvoiceLine {
     itemId: string;
     quantity: number;
     unitPrice: number;
+    taxRate: number;
+}
+
+function roundMoney(value: number) {
+    return Math.round(value * 100) / 100;
 }
 
 const VendorInvoice: React.FC = () => {
@@ -46,7 +51,7 @@ const VendorInvoice: React.FC = () => {
     }
 
     const invoiceEligiblePOs = useMemo(() => purchaseOrders.filter((po) => ['Partially Received', 'Fully Received', 'Closed'].includes(po.status)), [purchaseOrders]);
-    const selectedPO = invoiceEligiblePOs.find((po) => po.id === poId);
+    const selectedPO = invoiceEligiblePOs.find((po) => String(po.id) === poId);
 
     useEffect(() => {
         if (!selectedPO) {
@@ -59,14 +64,32 @@ const VendorInvoice: React.FC = () => {
                 itemId: line.itemId,
                 quantity: Math.max(0, Number(line.acceptedQty) - Number(line.invoicedQty)),
                 unitPrice: Number(line.unitPrice),
+                taxRate: Number(line.taxRate || 0),
             }))
             .filter((line) => line.quantity > 0));
     }, [selectedPO]);
 
-    const totalAmount = useMemo(() => lines.reduce((sum, line) => sum + (line.quantity * line.unitPrice), 0), [lines]);
+    const totals = useMemo(() => {
+        return lines.reduce((summary, line) => {
+            const baseAmount = roundMoney(line.quantity * line.unitPrice);
+            const taxAmount = roundMoney(baseAmount * (line.taxRate / 100));
+            return {
+                baseAmount: roundMoney(summary.baseAmount + baseAmount),
+                taxAmount: roundMoney(summary.taxAmount + taxAmount),
+                totalAmount: roundMoney(summary.totalAmount + baseAmount + taxAmount),
+            };
+        }, { baseAmount: 0, taxAmount: 0, totalAmount: 0 });
+    }, [lines]);
 
     function updateLine(index: number, patch: Partial<DraftInvoiceLine>) {
         setLines((current) => current.map((line, lineIndex) => lineIndex === index ? { ...line, ...patch } : line));
+    }
+
+    function getLineAmounts(line: DraftInvoiceLine) {
+        const baseAmount = roundMoney(line.quantity * line.unitPrice);
+        const taxAmount = roundMoney(baseAmount * (line.taxRate / 100));
+        const totalAmount = roundMoney(baseAmount + taxAmount);
+        return { baseAmount, taxAmount, totalAmount };
     }
 
     async function handleCreateInvoice(e: React.FormEvent) {
@@ -96,7 +119,7 @@ const VendorInvoice: React.FC = () => {
                 vendorInvoiceNo,
                 date: new Date(invoiceDate).toISOString(),
                 dueDate: new Date(dueDate).toISOString(),
-                amount: totalAmount,
+                amount: totals.totalAmount,
                 remarks,
                 lines: payloadLines,
             });
@@ -153,7 +176,7 @@ const VendorInvoice: React.FC = () => {
                             <select required className="input-vscode w-full" value={poId} onChange={(e) => setPoId(e.target.value)}>
                                 <option value="">Select PO</option>
                                 {invoiceEligiblePOs.map((po) => (
-                                    <option key={po.id} value={po.id}>{po.poNo} - {po.vendor?.name || po.vendorId}</option>
+                                    <option key={po.id} value={String(po.id)}>{po.poNo} - {po.vendor?.name || po.vendorId}</option>
                                 ))}
                             </select>
                         </div>
@@ -172,6 +195,28 @@ const VendorInvoice: React.FC = () => {
                     </div>
 
                     {selectedPO && (
+                        <div className="space-y-3">
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-sm">
+                                <div className="bg-vscode-bg border border-vscode-border rounded p-3">
+                                    <div className="text-vscode-text-muted text-xs uppercase">Selected PO</div>
+                                    <div className="font-semibold text-vscode-text">{selectedPO.poNo}</div>
+                                </div>
+                                <div className="bg-vscode-bg border border-vscode-border rounded p-3">
+                                    <div className="text-vscode-text-muted text-xs uppercase">Vendor</div>
+                                    <div className="font-semibold text-vscode-text">{selectedPO.vendor?.name || selectedPO.vendorId}</div>
+                                </div>
+                                <div className="bg-vscode-bg border border-vscode-border rounded p-3">
+                                    <div className="text-vscode-text-muted text-xs uppercase">PO Status</div>
+                                    <div className="font-semibold text-vscode-text">{selectedPO.status}</div>
+                                </div>
+                            </div>
+
+                            {lines.length === 0 && (
+                                <div className="rounded border border-vscode-border bg-vscode-bg p-3 text-sm text-vscode-text-muted">
+                                    No invoice lines are available for this PO. This happens when no GRN accepted quantity exists yet, or when all accepted quantity has already been invoiced.
+                                </div>
+                            )}
+
                         <div className="overflow-auto">
                             <table className="table-vscode">
                                 <thead>
@@ -182,12 +227,15 @@ const VendorInvoice: React.FC = () => {
                                         <th>Open Qty</th>
                                         <th>Invoice Qty</th>
                                         <th>Unit Price</th>
+                                        <th>VAT/GST %</th>
+                                        <th>VAT/GST Amt</th>
                                         <th>Line Total</th>
                                     </tr>
                                 </thead>
                                 <tbody>
                                     {lines.map((line, index) => {
                                         const poLine = selectedPO.poItems.find((entry) => entry.id === line.poItemId);
+                                        const amounts = getLineAmounts(line);
                                         return (
                                             <tr key={line.poItemId}>
                                                 <td>{poLine?.item?.code || line.itemId} - {poLine?.item?.name || 'Item'}</td>
@@ -200,12 +248,15 @@ const VendorInvoice: React.FC = () => {
                                                 <td>
                                                     <input type="number" min="0" step="0.01" className="input-vscode w-full" value={line.unitPrice} onChange={(e) => updateLine(index, { unitPrice: Number(e.target.value) || 0 })} />
                                                 </td>
-                                                <td className="font-mono">${(line.quantity * line.unitPrice).toFixed(2)}</td>
+                                                <td className="font-mono">{line.taxRate.toFixed(2)}%</td>
+                                                <td className="font-mono">${amounts.taxAmount.toFixed(2)}</td>
+                                                <td className="font-mono">${amounts.totalAmount.toFixed(2)}</td>
                                             </tr>
                                         );
                                     })}
                                 </tbody>
                             </table>
+                        </div>
                         </div>
                     )}
 
@@ -215,7 +266,11 @@ const VendorInvoice: React.FC = () => {
                     </div>
 
                     <div className="flex justify-between items-center">
-                        <div className="text-sm text-vscode-text-muted">Invoice Total: <span className="font-mono text-vscode-text">${totalAmount.toFixed(2)}</span></div>
+                        <div className="text-sm text-vscode-text-muted">
+                            Invoice Total:
+                            <span className="font-mono text-vscode-text"> ${totals.totalAmount.toFixed(2)}</span>
+                            <span className="ml-3">Tax: <span className="font-mono text-vscode-text">${totals.taxAmount.toFixed(2)}</span></span>
+                        </div>
                         <button className="btn-primary" type="submit">Save Matched Invoice</button>
                     </div>
                 </form>

@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { BrowserRouter as Router, Navigate, Route, Routes } from 'react-router-dom';
 import { ProtectedRoute } from './components/auth/ProtectedRoute';
 import Login from './pages/Login';
-import { AppProvider } from './contexts/AppContext';
+import { AppProvider, useAppContext } from './contexts/AppContext';
 import { ThemeProvider } from './contexts/ThemeContext';
 import TitleBar from './components/layout/TitleBar';
 import Sidebar from './components/layout/Sidebar';
@@ -42,6 +42,19 @@ export interface Tab {
 }
 
 function App() {
+  return (
+    <AppProvider>
+      <ThemeProvider>
+        <Router>
+          <AppLayout />
+        </Router>
+      </ThemeProvider>
+    </AppProvider>
+  );
+}
+
+function AppLayout() {
+  const { isApiLoading } = useAppContext();
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [tabs, setTabs] = useState<Tab[]>([{ id: 'dashboard', title: 'Dashboard', path: '/dashboard', closable: false }]);
   const [activeTabId, setActiveTabId] = useState('dashboard');
@@ -75,73 +88,69 @@ function App() {
   };
 
   return (
-    <AppProvider>
-      <ThemeProvider>
-        <Router>
-          <Routes>
-            <Route path="/login" element={<Login />} />
-            <Route
-              path="/*"
-              element={
-                <ProtectedRoute>
-                  <div className="h-screen flex flex-col overflow-hidden">
-                    <TitleBar />
-                    <div className="flex flex-1 overflow-hidden">
-                      <Sidebar collapsed={sidebarCollapsed} onToggle={() => setSidebarCollapsed(!sidebarCollapsed)} onNavigate={addTab} />
-                      <div className="flex-1 flex flex-col overflow-hidden">
-                        <TabBar
-                          tabs={tabs}
-                          activeTabId={activeTabId}
-                          onTabClick={setActiveTabId}
-                          onTabClose={closeTab}
-                          onCloseAllTabs={closeAllTabs}
-                        />
-                        <div className="flex-1 overflow-auto bg-vscode-bg">
-                          <Routes>
-                            <Route path="/" element={<Navigate to="/dashboard" replace />} />
-                            <Route path="/dashboard" element={<Dashboard />} />
-                            <Route path="/procurement/purchase-requisition" element={<PurchaseRequisitionList onNewPR={() => addTab({ id: 'new-pr', title: 'New Purchase Requisition', path: '/procurement/purchase-requisition/new', closable: true })} />} />
-                            <Route path="/procurement/purchase-requisition/new" element={<PurchaseRequisitionForm />} />
-                            <Route path="/procurement/purchase-requisition/:id/view" element={<PurchaseRequisitionView />} />
-                            <Route path="/procurement/purchase-requisition/:id" element={<PurchaseRequisitionForm />} />
-                            <Route path="/procurement/rfq" element={<RFQManager />} />
-                            <Route path="/procurement/rfq/:id" element={<RFQView />} />
-                            <Route path="/procurement/quotations" element={<Quotations />} />
-                            <Route path="/procurement/purchase-order" element={<PurchaseOrderList />} />
-                            <Route path="/procurement/purchase-order/:id" element={<PurchaseOrderView />} />
-                            <Route path="/procurement/grn" element={<GoodsReceipt />} />
-                            <Route path="/procurement/vendors" element={<VendorMaster />} />
-                            <Route path="/inventory/item-master" element={<ItemMaster />} />
-                            <Route path="/master/items" element={<ItemMaster />} />
-                            <Route path="/master/categories" element={<CategoryMaster />} />
-                            <Route path="/master/uom" element={<UomMaster />} />
-                            <Route path="/master/warehouses" element={<WarehouseMaster />} />
-                            <Route path="/master/vendors" element={<VendorMaster />} />
-                            <Route path="/master/approvals" element={<ApprovalMatrix />} />
-                            <Route path="/inventory/warehouses" element={<WarehouseMaster />} />
-                            <Route path="/inventory/stock-management" element={<StockManagement />} />
-                            <Route path="/inventory/transfer" element={<StockTransfer />} />
-                            <Route path="/inventory/issue" element={<MaterialIssue />} />
-                            <Route path="/inventory/grn" element={<GoodsReceipt />} />
-                            <Route path="/finance/invoices" element={<VendorInvoice />} />
-                            <Route path="/finance/invoices/:id" element={<VendorInvoiceView />} />
-                            <Route path="/finance/payments" element={<Payments />} />
-                            <Route path="/finance/payments/:id" element={<PaymentView />} />
-                            <Route path="/reports" element={<Reports />} />
-                            <Route path="/audit-log" element={<AuditLog />} />
-                            <Route path="/settings" element={<Settings />} />
-                          </Routes>
-                        </div>
-                      </div>
+    <>
+      <Routes>
+        <Route path="/login" element={<Login />} />
+        <Route
+          path="/*"
+          element={
+            <ProtectedRoute>
+              <div className="h-screen flex flex-col overflow-hidden">
+                <TitleBar />
+                <div className="flex flex-1 overflow-hidden">
+                  <Sidebar collapsed={sidebarCollapsed} onToggle={() => setSidebarCollapsed(!sidebarCollapsed)} onNavigate={addTab} />
+                  <div className="flex-1 flex flex-col overflow-hidden">
+                    <TabBar
+                      tabs={tabs}
+                      activeTabId={activeTabId}
+                      onTabClick={setActiveTabId}
+                      onTabClose={closeTab}
+                      onCloseAllTabs={closeAllTabs}
+                    />
+                    <div className={`flex-1 overflow-auto bg-vscode-bg api-loading-surface ${isApiLoading ? 'is-api-loading' : ''}`}>
+                      <Routes>
+                        <Route path="/" element={<Navigate to="/dashboard" replace />} />
+                        <Route path="/dashboard" element={<Dashboard />} />
+                        <Route path="/procurement/purchase-requisition" element={<PurchaseRequisitionList onNewPR={() => addTab({ id: 'new-pr', title: 'New Purchase Requisition', path: '/procurement/purchase-requisition/new', closable: true })} />} />
+                        <Route path="/procurement/purchase-requisition/new" element={<PurchaseRequisitionForm />} />
+                        <Route path="/procurement/purchase-requisition/:id/view" element={<PurchaseRequisitionView />} />
+                        <Route path="/procurement/purchase-requisition/:id" element={<PurchaseRequisitionForm />} />
+                        <Route path="/procurement/rfq" element={<RFQManager />} />
+                        <Route path="/procurement/rfq/:id" element={<RFQView />} />
+                        <Route path="/procurement/quotations" element={<Quotations />} />
+                        <Route path="/procurement/purchase-order" element={<PurchaseOrderList />} />
+                        <Route path="/procurement/purchase-order/:id" element={<PurchaseOrderView />} />
+                        <Route path="/procurement/grn" element={<GoodsReceipt />} />
+                        <Route path="/procurement/vendors" element={<VendorMaster />} />
+                        <Route path="/inventory/item-master" element={<ItemMaster />} />
+                        <Route path="/master/items" element={<ItemMaster />} />
+                        <Route path="/master/categories" element={<CategoryMaster />} />
+                        <Route path="/master/uom" element={<UomMaster />} />
+                        <Route path="/master/warehouses" element={<WarehouseMaster />} />
+                        <Route path="/master/vendors" element={<VendorMaster />} />
+                        <Route path="/master/approvals" element={<ApprovalMatrix />} />
+                        <Route path="/inventory/warehouses" element={<WarehouseMaster />} />
+                        <Route path="/inventory/stock-management" element={<StockManagement />} />
+                        <Route path="/inventory/transfer" element={<StockTransfer />} />
+                        <Route path="/inventory/issue" element={<MaterialIssue />} />
+                        <Route path="/inventory/grn" element={<GoodsReceipt />} />
+                        <Route path="/finance/invoices" element={<VendorInvoice />} />
+                        <Route path="/finance/invoices/:id" element={<VendorInvoiceView />} />
+                        <Route path="/finance/payments" element={<Payments />} />
+                        <Route path="/finance/payments/:id" element={<PaymentView />} />
+                        <Route path="/reports" element={<Reports />} />
+                        <Route path="/audit-log" element={<AuditLog />} />
+                        <Route path="/settings" element={<Settings />} />
+                      </Routes>
                     </div>
                   </div>
-                </ProtectedRoute>
-              }
-            />
-          </Routes>
-        </Router>
-      </ThemeProvider>
-    </AppProvider>
+                </div>
+              </div>
+            </ProtectedRoute>
+          }
+        />
+      </Routes>
+    </>
   );
 }
 

@@ -45,10 +45,10 @@ const GoodsReceipt: React.FC = () => {
         }
     }
 
-    const selectedPO = useMemo(() => purchaseOrders.find((po) => po.id === selectedPOId), [purchaseOrders, selectedPOId]);
+    const selectedPO = useMemo(() => purchaseOrders.find((po) => String(po.id) === selectedPOId), [purchaseOrders, selectedPOId]);
 
     function selectPO(po: PurchaseOrder) {
-        setSelectedPOId(po.id);
+        setSelectedPOId(String(po.id));
         setReceiptLines((po.poItems || []).map((line) => {
             const remaining = Number(line.orderedQty) - Number(line.receivedQty) - Number(line.cancelledQty);
             return {
@@ -123,7 +123,7 @@ const GoodsReceipt: React.FC = () => {
                     <div className="p-3 border-b border-vscode-border font-semibold text-xs uppercase text-vscode-text-muted">Issued Purchase Orders</div>
                     <div className="flex-1 overflow-auto">
                         {purchaseOrders.map((po) => (
-                            <button key={po.id} className={`w-full text-left p-3 border-b border-vscode-border hover:bg-vscode-hover ${selectedPOId === po.id ? 'bg-vscode-active border-l-2 border-l-vscode-accent' : ''}`} onClick={() => selectPO(po)}>
+                            <button key={po.id} className={`w-full text-left p-3 border-b border-vscode-border hover:bg-vscode-hover ${selectedPOId === String(po.id) ? 'bg-vscode-active border-l-2 border-l-vscode-accent' : ''}`} onClick={() => selectPO(po)}>
                                 <div className="font-semibold text-sm">{po.poNo}</div>
                                 <div className="text-xs text-vscode-text-muted mt-1">{po.vendor?.name || po.vendorId}</div>
                                 <div className="text-xs text-vscode-text-muted">Status: {po.status}</div>

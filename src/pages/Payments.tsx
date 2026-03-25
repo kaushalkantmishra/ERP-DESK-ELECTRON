@@ -45,17 +45,17 @@ const Payments: React.FC = () => {
     const payableInvoices = useMemo(() => invoices.filter((invoice) => ['Approved', 'Partially Paid'].includes(invoice.status)), [invoices]);
     const vendorOptions = useMemo(() => {
         const unique = new Map<string, string>();
-        payableInvoices.forEach((invoice) => unique.set(invoice.vendorId, invoice.vendor?.name || invoice.vendorId));
+        payableInvoices.forEach((invoice) => unique.set(String(invoice.vendorId), invoice.vendor?.name || String(invoice.vendorId)));
         return Array.from(unique.entries()).map(([id, name]) => ({ id, name }));
     }, [payableInvoices]);
-    const vendorInvoices = payableInvoices.filter((invoice) => invoice.vendorId === selectedVendorId);
+    const vendorInvoices = payableInvoices.filter((invoice) => String(invoice.vendorId) === selectedVendorId);
 
     useEffect(() => {
         setAllocations(vendorInvoices.map((invoice) => ({
-            invoiceId: invoice.id,
+            invoiceId: String(invoice.id),
             allocatedAmount: Number(invoice.balanceAmount),
         })));
-    }, [selectedVendorId]);
+    }, [vendorInvoices]);
 
     const totalAmount = allocations.reduce((sum, allocation) => sum + allocation.allocatedAmount, 0);
 
@@ -156,7 +156,7 @@ const Payments: React.FC = () => {
                             </thead>
                             <tbody>
                                 {vendorInvoices.map((invoice) => {
-                                    const allocation = allocations.find((entry) => entry.invoiceId === invoice.id);
+                                    const allocation = allocations.find((entry) => entry.invoiceId === String(invoice.id));
                                     return (
                                         <tr key={invoice.id}>
                                             <td>{invoice.vendorInvoiceNo} / {invoice.invoiceNo}</td>
@@ -164,7 +164,7 @@ const Payments: React.FC = () => {
                                             <td className="font-mono">${Number(invoice.balanceAmount).toFixed(2)}</td>
                                             <td><span className="badge badge-info">{invoice.status}</span></td>
                                             <td>
-                                                <input type="number" min="0" max={Number(invoice.balanceAmount)} step="0.01" className="input-vscode w-full" value={allocation?.allocatedAmount || 0} onChange={(e) => updateAllocation(invoice.id, Number(e.target.value) || 0)} />
+                                                <input type="number" min="0" max={Number(invoice.balanceAmount)} step="0.01" className="input-vscode w-full" value={allocation?.allocatedAmount || 0} onChange={(e) => updateAllocation(String(invoice.id), Number(e.target.value) || 0)} />
                                             </td>
                                         </tr>
                                     );

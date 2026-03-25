@@ -4,7 +4,7 @@ import {
     Warehouse, Category, Uom, ActivityLog
 } from '../types/models';
 import { authService } from '../services/authService';
-import { hasValidStoredToken, setAuthFailureHandler } from '../services/api';
+import { hasValidStoredToken, setAuthFailureHandler, subscribeToApiLoading } from '../services/api';
 import { masterService } from '../services/masterService';
 import { systemService } from '../services/systemService';
 
@@ -22,6 +22,7 @@ interface AppContextType {
     uoms: Uom[];
 
     isLoading: boolean;
+    isApiLoading: boolean;
     refreshMasterData: () => Promise<void>;
     logActivity: (action: string, description: string, module: ActivityLog['module']) => Promise<void>;
 }
@@ -48,6 +49,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const [categories, setCategories] = useState<Category[]>([]);
     const [uoms, setUoms] = useState<Uom[]>([]);
     const [isLoading, setIsLoading] = useState(false);
+    const [isApiLoading, setIsApiLoading] = useState(false);
 
     const refreshMasterData = useCallback(async () => {
         if (!isAuthenticated) return;
@@ -91,6 +93,10 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
         setAuthFailureHandler(handleAuthFailure);
         return () => setAuthFailureHandler(null);
+    }, []);
+
+    useEffect(() => {
+        return subscribeToApiLoading(setIsApiLoading);
     }, []);
 
     const login = async (email: string, pass: string): Promise<boolean> => {
@@ -141,7 +147,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         <AppContext.Provider value={{
             currentUser, isAuthenticated, login, logout,
             items, vendors, warehouses, categories, uoms,
-            isLoading, refreshMasterData, logActivity
+            isLoading, isApiLoading, refreshMasterData, logActivity
         }}>
             {children}
         </AppContext.Provider>
