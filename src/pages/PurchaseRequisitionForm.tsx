@@ -195,7 +195,10 @@ const PurchaseRequisitionForm: React.FC = () => {
                     return;
                 }
             }
-            await procurementService.updatePRStatus(record.id, nextStatus, rejectionReason);
+            const result = await procurementService.updatePRStatus(record.id, nextStatus, rejectionReason);
+            if (result?.message) {
+                alert(result.message);
+            }
             navigate('/procurement/purchase-requisition');
         } catch (error: any) {
             console.error(error);

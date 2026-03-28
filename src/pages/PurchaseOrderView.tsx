@@ -43,7 +43,10 @@ const PurchaseOrderView: React.FC = () => {
 
         try {
             setIsSubmitting(true);
-            await procurementService.updatePOStatus(po.id, status);
+            const result = await procurementService.updatePOStatus(po.id, status);
+            if (result?.message) {
+                alert(result.message);
+            }
             await loadPO(po.id);
         } catch (error: any) {
             console.error(error);

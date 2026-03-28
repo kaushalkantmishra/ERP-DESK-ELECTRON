@@ -60,7 +60,10 @@ const PurchaseRequisitionView: React.FC = () => {
                 }
             }
 
-            await procurementService.updatePRStatus(pr.id, status, rejectionReason);
+            const result = await procurementService.updatePRStatus(pr.id, status, rejectionReason);
+            if (result?.message && result.pendingApproval) {
+                alert(result.message);
+            }
             await loadPR(pr.id);
         } catch (error: any) {
             console.error(error);

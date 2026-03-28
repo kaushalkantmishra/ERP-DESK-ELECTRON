@@ -49,6 +49,7 @@ const MaterialIssue: React.FC = () => {
                 requestorId: currentUser.id,
                 department,
                 date: new Date().toISOString(),
+                warehouseId,
                 items: reqItems.filter((item) => item.itemId && item.quantity > 0),
                 status: 'Requested',
             });
@@ -67,20 +68,9 @@ const MaterialIssue: React.FC = () => {
         }
         try {
             setIsLoading(true);
-            for (const item of request.items) {
-                await inventoryService.createStockTransaction({
-                    itemId: item.itemId,
-                    warehouseId,
-                    type: 'Issue',
-                    quantity: item.quantity,
-                    referenceType: 'Material Request',
-                    referenceId: request.requestNo,
-                    notes: `Issued to ${request.department}`,
-                    idempotencyKey: `issue-${request.id}-${item.itemId}-${Date.now()}`,
-                });
-            }
+            await inventoryService.issueMaterialRequest(request.id, warehouseId);
             await fetchData();
-            alert('Stock issue posted. Material request status endpoint is still pending in backend.');
+            alert('Stock issue posted successfully.');
         } catch (error: any) {
             console.error(error);
             alert(error?.response?.data?.message || 'Unable to issue stock');

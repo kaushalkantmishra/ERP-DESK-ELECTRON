@@ -41,7 +41,10 @@ const VendorInvoiceView: React.FC = () => {
         if (!invoice) return;
         try {
             setIsSubmitting(true);
-            await financeService.updateInvoiceStatus(invoice.id, 'Approved');
+            const result = await financeService.updateInvoiceStatus(invoice.id, 'Approved');
+            if (result?.message) {
+                alert(result.message);
+            }
             await loadInvoice(invoice.id);
         } catch (error: any) {
             console.error(error);

@@ -48,7 +48,10 @@ const Payments: React.FC = () => {
         payableInvoices.forEach((invoice) => unique.set(String(invoice.vendorId), invoice.vendor?.name || String(invoice.vendorId)));
         return Array.from(unique.entries()).map(([id, name]) => ({ id, name }));
     }, [payableInvoices]);
-    const vendorInvoices = payableInvoices.filter((invoice) => String(invoice.vendorId) === selectedVendorId);
+    const vendorInvoices = useMemo(
+        () => payableInvoices.filter((invoice) => String(invoice.vendorId) === selectedVendorId),
+        [payableInvoices, selectedVendorId],
+    );
 
     useEffect(() => {
         setAllocations(vendorInvoices.map((invoice) => ({

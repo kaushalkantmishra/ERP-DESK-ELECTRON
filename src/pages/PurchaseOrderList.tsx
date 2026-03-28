@@ -89,7 +89,10 @@ const PurchaseOrderList: React.FC = () => {
     async function handleIssuePO(po: PurchaseOrder) {
         try {
             setIsLoading(true);
-            await procurementService.updatePOStatus(po.id, 'Issued');
+            const result = await procurementService.updatePOStatus(po.id, 'Issued');
+            if (result?.message) {
+                alert(result.message);
+            }
             await fetchData();
         } catch (error: any) {
             console.error(error);

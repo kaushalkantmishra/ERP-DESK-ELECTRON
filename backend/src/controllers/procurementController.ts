@@ -21,6 +21,7 @@ import {
     STRICT_TRANSITIONS,
     assertTransition,
     computeTaxAmounts,
+    evaluateApprovalDecision,
     enforceTolerance,
     generateDocumentNo,
     getSettings,
@@ -64,7 +65,11 @@ function assertPRActionAllowed(req: AuthRequest, pr: any, nextStatus?: string) {
         throw new Error('Only the request owner or procurement team can submit this requisition');
     }
 
-    if (nextStatus === 'Approved' || nextStatus === 'Rejected' || nextStatus === 'Closed') {
+    if (nextStatus === 'Approved' || nextStatus === 'Rejected') {
+        return;
+    }
+
+    if (nextStatus === 'Closed') {
         if (isApprover) return;
         throw new Error(`Only Admin or Procurement can move PR to ${nextStatus}`);
     }
@@ -478,7 +483,7 @@ export const updatePRStatus = async (req: AuthRequest, res: Response) => {
     try {
         const pr = await db.query.purchaseRequisitions.findFirst({
             where: eq(purchaseRequisitions.id, toId(String(req.params.id), 'purchase requisition id')),
-            with: { prItems: true, purchaseOrders: true },
+            with: { prItems: { with: { item: true } }, purchaseOrders: true },
         });
         if (!pr) return res.status(404).json({ message: 'PR not found' });
 
@@ -511,7 +516,66 @@ export const updatePRStatus = async (req: AuthRequest, res: Response) => {
             patch.cancelledBy = userId ?? null;
         }
 
+        const approvalAmount = (pr.prItems || []).reduce((sum: number, line: any) => sum + (toDecimal(line.quantity) * toDecimal(line.item?.price)), 0);
+        let approvalResponse: { message: string; pendingApproval?: boolean } | null = null;
+
         await db.transaction(async (tx) => {
+            if (status === 'Approved' || status === 'Rejected') {
+                const approvalDecision = await evaluateApprovalDecision(tx, {
+                    req,
+                    document: 'Purchase Requisition',
+                    amount: approvalAmount,
+                    entityType: 'PurchaseRequisition',
+                    entityId: pr.id,
+                    targetStatus: status,
+                    currentStatus: pr.status,
+                    entityVersion: pr.versionNo,
+                });
+
+                if (approvalDecision.mode === 'record_only') {
+                    await logActivity(tx, {
+                        userId,
+                        action: 'APPROVAL_STEP_RECORDED',
+                        description: `Approval step recorded for ${pr.prNo}`,
+                        module: 'Procurement',
+                        entityType: 'PurchaseRequisition',
+                        entityId: pr.id,
+                        payload: {
+                            document: 'Purchase Requisition',
+                            targetStatus: status,
+                            currentStatus: pr.status,
+                            entityVersion: pr.versionNo,
+                            approvalsRecorded: approvalDecision.approvalsRecorded,
+                            approvalsRequired: approvalDecision.approvalsRequired,
+                        },
+                    });
+                    approvalResponse = {
+                        pendingApproval: true,
+                        message: `Approval recorded (${approvalDecision.approvalsRecorded}/${approvalDecision.approvalsRequired}). Waiting for more approver(s).`,
+                    };
+                    return;
+                }
+
+                if (approvalDecision.mode === 'final' && approvalDecision.approvalsRequired > 1) {
+                    await logActivity(tx, {
+                        userId,
+                        action: 'APPROVAL_STEP_RECORDED',
+                        description: `Final approval step recorded for ${pr.prNo}`,
+                        module: 'Procurement',
+                        entityType: 'PurchaseRequisition',
+                        entityId: pr.id,
+                        payload: {
+                            document: 'Purchase Requisition',
+                            targetStatus: status,
+                            currentStatus: pr.status,
+                            entityVersion: pr.versionNo,
+                            approvalsRecorded: approvalDecision.approvalsRecorded,
+                            approvalsRequired: approvalDecision.approvalsRequired,
+                        },
+                    });
+                }
+            }
+
             const updated = await optimisticVersionUpdate(tx, purchaseRequisitions, purchaseRequisitions.id, pr.id, pr.versionNo, patch);
 
             if (status === 'Approved') {
@@ -542,6 +606,10 @@ export const updatePRStatus = async (req: AuthRequest, res: Response) => {
                 payload: { from: pr.status, to: status },
             });
         });
+
+        if (approvalResponse) {
+            return res.json(approvalResponse);
+        }
 
         res.json({ message: 'PR status updated' });
     } catch (error: any) {
@@ -1106,7 +1174,65 @@ export const updatePOStatus = async (req: AuthRequest, res: Response) => {
             patch.cancelledBy = userId ?? null;
         }
 
+        let approvalResponse: { message: string; pendingApproval?: boolean } | null = null;
+
         await db.transaction(async (tx) => {
+            if (status === 'Issued') {
+                const approvalDecision = await evaluateApprovalDecision(tx, {
+                    req,
+                    document: 'Purchase Order',
+                    amount: toDecimal(po.totalAmount),
+                    entityType: 'PurchaseOrder',
+                    entityId: po.id,
+                    targetStatus: status,
+                    currentStatus: po.status,
+                    entityVersion: po.versionNo,
+                });
+
+                if (approvalDecision.mode === 'record_only') {
+                    await logActivity(tx, {
+                        userId,
+                        action: 'APPROVAL_STEP_RECORDED',
+                        description: `Approval step recorded for ${po.poNo}`,
+                        module: 'Procurement',
+                        entityType: 'PurchaseOrder',
+                        entityId: po.id,
+                        payload: {
+                            document: 'Purchase Order',
+                            targetStatus: status,
+                            currentStatus: po.status,
+                            entityVersion: po.versionNo,
+                            approvalsRecorded: approvalDecision.approvalsRecorded,
+                            approvalsRequired: approvalDecision.approvalsRequired,
+                        },
+                    });
+                    approvalResponse = {
+                        pendingApproval: true,
+                        message: `Approval recorded (${approvalDecision.approvalsRecorded}/${approvalDecision.approvalsRequired}). Waiting for more approver(s).`,
+                    };
+                    return;
+                }
+
+                if (approvalDecision.mode === 'final' && approvalDecision.approvalsRequired > 1) {
+                    await logActivity(tx, {
+                        userId,
+                        action: 'APPROVAL_STEP_RECORDED',
+                        description: `Final approval step recorded for ${po.poNo}`,
+                        module: 'Procurement',
+                        entityType: 'PurchaseOrder',
+                        entityId: po.id,
+                        payload: {
+                            document: 'Purchase Order',
+                            targetStatus: status,
+                            currentStatus: po.status,
+                            entityVersion: po.versionNo,
+                            approvalsRecorded: approvalDecision.approvalsRecorded,
+                            approvalsRequired: approvalDecision.approvalsRequired,
+                        },
+                    });
+                }
+            }
+
             const updated = await optimisticVersionUpdate(tx, purchaseOrders, purchaseOrders.id, po.id, po.versionNo, patch);
 
             await logActivity(tx, {
@@ -1121,6 +1247,10 @@ export const updatePOStatus = async (req: AuthRequest, res: Response) => {
                 payload: { from: po.status, to: status },
             });
         });
+
+        if (approvalResponse) {
+            return res.json(approvalResponse);
+        }
 
         if (status === 'Issued' && po.vendor) {
             try {

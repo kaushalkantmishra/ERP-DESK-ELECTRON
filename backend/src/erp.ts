@@ -1,5 +1,6 @@
 import { and, eq, sql } from 'drizzle-orm';
 import {
+    activityLogs,
     documentSequences,
     systemSettings,
 } from './db/schema.js';
@@ -70,6 +71,40 @@ export const DEFAULT_SETTINGS: ProcurementSettings = {
     },
 };
 
+export interface ApprovalMatrixRule {
+    id: string;
+    role: string;
+    document: string;
+    minAmount: number;
+    maxAmount: number;
+    approvers: number;
+    active: boolean;
+}
+
+export interface ApprovalMatrixConfig {
+    simulationMode: boolean;
+    adminBypass: boolean;
+    rules: ApprovalMatrixRule[];
+}
+
+export const APPROVAL_MATRIX_SETTINGS_KEY = 'erp.approval_matrix';
+
+export const DEFAULT_APPROVAL_MATRIX: ApprovalMatrixConfig = {
+    simulationMode: false,
+    adminBypass: true,
+    rules: [
+        { id: '1', role: 'Procurement', document: 'Purchase Requisition', minAmount: 0, maxAmount: 50000, approvers: 1, active: true },
+        { id: '2', role: 'Admin', document: 'Purchase Requisition', minAmount: 50001, maxAmount: 0, approvers: 1, active: true },
+        { id: '3', role: 'Procurement', document: 'Purchase Order', minAmount: 0, maxAmount: 50000, approvers: 1, active: true },
+        { id: '4', role: 'Finance', document: 'Purchase Order', minAmount: 50001, maxAmount: 200000, approvers: 1, active: true },
+        { id: '5', role: 'Admin', document: 'Purchase Order', minAmount: 200001, maxAmount: 0, approvers: 1, active: true },
+        { id: '6', role: 'Store', document: 'Material Request', minAmount: 0, maxAmount: 0, approvers: 1, active: true },
+        { id: '7', role: 'Finance', document: 'Vendor Invoice', minAmount: 0, maxAmount: 50000, approvers: 1, active: true },
+        { id: '8', role: 'Admin', document: 'Vendor Invoice', minAmount: 50001, maxAmount: 0, approvers: 1, active: true },
+        { id: '9', role: 'Finance', document: 'Payment', minAmount: 0, maxAmount: 0, approvers: 1, active: true },
+    ],
+};
+
 export function assertTransition(currentStatus: string, nextStatus: string, transitions: Record<string, string[]>, entityName: string) {
     const allowed = transitions[currentStatus] ?? [];
     if (!allowed.includes(nextStatus)) {
@@ -130,6 +165,148 @@ export async function getSettings(tx: AnyTx): Promise<ProcurementSettings> {
             ...DEFAULT_SETTINGS.documentPrefixes,
             ...(((row.value as Partial<ProcurementSettings>).documentPrefixes) || {}),
         },
+    };
+}
+
+export async function getApprovalMatrix(tx: AnyTx): Promise<ApprovalMatrixConfig> {
+    const row = await tx.query.systemSettings.findFirst({
+        where: eq(systemSettings.key, APPROVAL_MATRIX_SETTINGS_KEY),
+    });
+
+    if (!row?.value || typeof row.value !== 'object') {
+        return DEFAULT_APPROVAL_MATRIX;
+    }
+
+    const value = row.value as Partial<ApprovalMatrixConfig>;
+    return {
+        simulationMode: value.simulationMode === true,
+        adminBypass: value.adminBypass !== false,
+        rules: Array.isArray(value.rules)
+            ? value.rules.map((rule) => ({
+                id: String((rule as any).id || ''),
+                role: String((rule as any).role || ''),
+                document: String((rule as any).document || ''),
+                minAmount: toDecimal((rule as any).minAmount),
+                maxAmount: toDecimal((rule as any).maxAmount),
+                approvers: Math.max(1, Number((rule as any).approvers || 1)),
+                active: (rule as any).active !== false,
+            }))
+            : DEFAULT_APPROVAL_MATRIX.rules,
+    };
+}
+
+function normalizeApprovalText(value: string) {
+    return String(value || '').trim().toLowerCase().replace(/[^a-z0-9]/g, '');
+}
+
+function documentMatches(ruleDocument: string, targetDocument: string) {
+    const normalizedRule = normalizeApprovalText(ruleDocument);
+    const normalizedTarget = normalizeApprovalText(targetDocument);
+    const aliases: Record<string, string[]> = {
+        purchaserequisition: ['pr'],
+        purchaseorder: ['po'],
+        vendorinvoice: ['invoice'],
+        materialrequest: ['mr'],
+    };
+
+    return normalizedRule === normalizedTarget || (aliases[normalizedTarget] || []).includes(normalizedRule);
+}
+
+function roleMatches(ruleRole: string, userRole: string) {
+    const normalizedRule = normalizeApprovalText(ruleRole);
+    const normalizedUserRole = normalizeApprovalText(userRole);
+    if (normalizedRule === normalizedUserRole) return true;
+
+    const roleAliases: Record<string, string[]> = {
+        admin: ['administrator', 'director', 'management'],
+        procurement: ['procurementmanager', 'purchasemanager', 'buyer'],
+        finance: ['financemanager', 'accounts', 'accountspayable'],
+        store: ['storemanager', 'warehouse', 'warehousemanager'],
+        dept: ['department', 'departmentmanager', 'requestor'],
+        vendor: ['supplier'],
+    };
+
+    return (roleAliases[normalizedUserRole] || []).includes(normalizedRule);
+}
+
+export async function evaluateApprovalDecision(
+    tx: AnyTx,
+    params: {
+        req: { user?: { id: string | number; role: string } };
+        document: string;
+        amount: number;
+        entityType: string;
+        entityId: number;
+        targetStatus: string;
+        currentStatus: string;
+        entityVersion: number;
+    },
+) {
+    const matrix = await getApprovalMatrix(tx);
+    if (matrix.simulationMode) return { mode: 'simulation' as const };
+
+    const userRole = params.req.user?.role || '';
+    if (matrix.adminBypass && userRole === 'Admin') return { mode: 'bypass' as const };
+
+    const matchingRules = matrix.rules
+        .filter((rule) => rule.active)
+        .filter((rule) => documentMatches(rule.document, params.document))
+        .filter((rule) => {
+            if (rule.minAmount === 0 && rule.maxAmount === 0) return true;
+            if (rule.maxAmount === 0) return params.amount >= rule.minAmount;
+            return params.amount >= rule.minAmount && params.amount <= rule.maxAmount;
+        })
+        .sort((a, b) => b.minAmount - a.minAmount);
+
+    const rule = matchingRules[0];
+    if (!rule) return { mode: 'no_rule' as const };
+
+    if (!roleMatches(rule.role, userRole)) {
+        throw new Error(`${params.document} requires approval by ${rule.role} for amount ${params.amount.toFixed(2)}`);
+    }
+
+    if (rule.approvers <= 1) {
+        return { mode: 'final' as const, rule, approvalsRecorded: 1, approvalsRequired: 1 };
+    }
+
+    const approvalLogs = await tx.query.activityLogs.findMany({
+        where: and(eq(activityLogs.entityType, params.entityType), eq(activityLogs.entityId, params.entityId), eq(activityLogs.action, 'APPROVAL_STEP_RECORDED')),
+    });
+
+    const relevantLogs = approvalLogs.filter((log: any) => {
+        const payload = (log.payload && typeof log.payload === 'object') ? log.payload as Record<string, unknown> : {};
+        return payload.document === params.document
+            && payload.targetStatus === params.targetStatus
+            && payload.currentStatus === params.currentStatus
+            && Number(payload.entityVersion) === params.entityVersion;
+    });
+
+    const distinctApproverIds = [...new Set(
+        relevantLogs
+            .map((log: any) => Number(log.userId))
+            .filter((value: number) => Number.isInteger(value) && value > 0),
+    )];
+    const currentUserId = typeof params.req.user?.id === 'number' ? params.req.user.id : Number(params.req.user?.id);
+
+    if (distinctApproverIds.includes(currentUserId)) {
+        throw new Error(`You have already approved this ${params.document}. Waiting for ${Math.max(0, rule.approvers - distinctApproverIds.length)} more approval(s).`);
+    }
+
+    const nextApprovalCount = distinctApproverIds.length + 1;
+    if (nextApprovalCount < rule.approvers) {
+        return {
+            mode: 'record_only' as const,
+            rule,
+            approvalsRecorded: nextApprovalCount,
+            approvalsRequired: rule.approvers,
+        };
+    }
+
+    return {
+        mode: 'final' as const,
+        rule,
+        approvalsRecorded: nextApprovalCount,
+        approvalsRequired: rule.approvers,
     };
 }
 

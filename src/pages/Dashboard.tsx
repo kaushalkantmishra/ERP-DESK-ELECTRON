@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Activity, AlertTriangle, DollarSign, FileText, Package, ShoppingCart, TrendingDown } from 'lucide-react';
+import { Activity, AlertTriangle, DollarSign, FileText, Package, ShoppingCart, TrendingDown, Warehouse } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { financeService } from '../services/financeService';
 import { inventoryService } from '../services/inventoryService';
@@ -45,7 +45,7 @@ const Dashboard: React.FC = () => {
     const pendingPRs = prs.filter((pr) => pr.status === 'Submitted').length;
     const issuedPOs = pos.filter((po) => ['Issued', 'Partially Received'].includes(po.status)).length;
     const pendingInvoices = invoices.filter((invoice) => ['Matched', 'Approved', 'Partially Paid'].includes(invoice.status)).length;
-    const lowStockItems = stockLevels.filter((level) => Number(level.quantity) <= Number(level.minStockLevel || 0)).length;
+    const lowStockItems = stockLevels.filter((level) => Number(level.quantity) <= Number(level.item?.reorderLevel || level.minStockLevel || 0)).length;
     const totalOpenPayable = invoices.reduce((sum, invoice) => sum + Number(invoice.balanceAmount || 0), 0);
 
     const recentActivity = [...prs.map((pr) => ({ id: pr.prNo, label: 'Purchase Request', date: pr.date, status: pr.status })), ...pos.map((po) => ({ id: po.poNo, label: 'Purchase Order', date: po.date, status: po.status }))]
@@ -53,9 +53,70 @@ const Dashboard: React.FC = () => {
         .slice(0, 6);
 
     const topInventory = useMemo(() => items.slice(0, 5).map((item) => {
-        const totalQty = stockLevels.filter((level) => level.itemId === item.id).reduce((sum, level) => sum + Number(level.quantity), 0);
+        const totalQty = stockLevels.filter((level) => String(level.itemId) === String(item.id)).reduce((sum, level) => sum + Number(level.quantity), 0);
         return { item, totalQty, value: totalQty * Number(item.price) };
     }).sort((a, b) => b.value - a.value), [items, stockLevels]);
+
+    const stockHotspots = useMemo(() => {
+        return stockLevels
+            .map((level) => {
+                const item = level.item || items.find((entry) => String(entry.id) === String(level.itemId));
+                const threshold = Number(item?.reorderLevel || level.minStockLevel || 0);
+                const quantity = Number(level.quantity || 0);
+                const availableQty = Number(level.availableQty ?? quantity);
+                const shortage = Math.max(0, threshold - availableQty);
+                return {
+                    key: `${level.itemId}-${level.warehouseId}`,
+                    item,
+                    warehouseName: level.warehouse?.name || `Warehouse ${level.warehouseId}`,
+                    availableQty,
+                    threshold,
+                    shortage,
+                };
+            })
+            .filter((entry) => entry.shortage > 0)
+            .sort((a, b) => b.shortage - a.shortage)
+            .slice(0, 5);
+    }, [items, stockLevels]);
+
+    const approvalQueue = useMemo(() => {
+        return prs
+            .filter((pr) => pr.status === 'Submitted')
+            .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
+            .slice(0, 5)
+            .map((pr) => ({
+                ...pr,
+                ageDays: Math.max(0, Math.floor((Date.now() - new Date(pr.date).getTime()) / (1000 * 60 * 60 * 24))),
+            }));
+    }, [prs]);
+
+    const receiptQueue = useMemo(() => {
+        return pos
+            .filter((po) => ['Issued', 'Partially Received'].includes(po.status))
+            .sort((a, b) => new Date(a.deliveryDate || a.date).getTime() - new Date(b.deliveryDate || b.date).getTime())
+            .slice(0, 5)
+            .map((po) => ({
+                ...po,
+                openReceiptQty: (po.poItems || []).reduce((sum, line) => {
+                    const ordered = Number(line.orderedQty || 0);
+                    const received = Number(line.receivedQty || 0);
+                    const cancelled = Number(line.cancelledQty || 0);
+                    return sum + Math.max(0, ordered - received - cancelled);
+                }, 0),
+            }));
+    }, [pos]);
+
+    const paymentQueue = useMemo(() => {
+        return invoices
+            .filter((invoice) => ['Approved', 'Partially Paid', 'Matched'].includes(invoice.status) && Number(invoice.balanceAmount || 0) > 0)
+            .sort((a, b) => new Date(a.dueDate || a.date).getTime() - new Date(b.dueDate || b.date).getTime())
+            .slice(0, 5)
+            .map((invoice) => {
+                const dueDate = new Date(invoice.dueDate || invoice.date);
+                const daysToDue = Math.floor((dueDate.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+                return { ...invoice, daysToDue };
+            });
+    }, [invoices]);
 
     return (
         <div className="p-4 flex flex-col gap-4 relative">
@@ -136,6 +197,107 @@ const Dashboard: React.FC = () => {
                             <button className="w-full text-left p-3 bg-vscode-bg border border-vscode-border rounded hover:border-vscode-accent" onClick={() => navigate('/finance/invoices')}>Approve matched invoices</button>
                         </div>
                     </div>
+                </div>
+            </div>
+
+            <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
+                <div className="bg-vscode-sidebar border border-vscode-border rounded-md p-4">
+                    <h3 className="font-semibold flex items-center gap-2"><FileText size={16} className="text-vscode-accent" />Approval Queue</h3>
+                    <div className="mt-3 space-y-3">
+                        {approvalQueue.length > 0 ? approvalQueue.map((pr) => (
+                            <button
+                                key={pr.id}
+                                className="w-full text-left p-3 bg-vscode-bg border border-vscode-border rounded hover:border-vscode-accent"
+                                onClick={() => navigate(`/procurement/purchase-requisition/${pr.id}/view`)}
+                            >
+                                <div className="flex items-start justify-between gap-3">
+                                    <div>
+                                        <div className="font-mono text-xs font-semibold text-vscode-text">{pr.prNo}</div>
+                                        <div className="text-sm text-vscode-text-muted">{pr.department || 'Department not set'}</div>
+                                    </div>
+                                    <span className="text-xs text-status-warning">{pr.ageDays}d waiting</span>
+                                </div>
+                            </button>
+                        )) : (
+                            <div className="text-sm text-vscode-text-muted">No PRs waiting for approval.</div>
+                        )}
+                    </div>
+                </div>
+
+                <div className="bg-vscode-sidebar border border-vscode-border rounded-md p-4">
+                    <h3 className="font-semibold flex items-center gap-2"><ShoppingCart size={16} className="text-status-warning" />Receipt Follow-up</h3>
+                    <div className="mt-3 space-y-3">
+                        {receiptQueue.length > 0 ? receiptQueue.map((po) => (
+                            <button
+                                key={po.id}
+                                className="w-full text-left p-3 bg-vscode-bg border border-vscode-border rounded hover:border-vscode-accent"
+                                onClick={() => navigate(`/procurement/purchase-order/${po.id}`)}
+                            >
+                                <div className="flex items-start justify-between gap-3">
+                                    <div>
+                                        <div className="font-mono text-xs font-semibold text-vscode-text">{po.poNo}</div>
+                                        <div className="text-sm text-vscode-text-muted">{po.vendor?.name || po.vendorId}</div>
+                                    </div>
+                                    <div className="text-right">
+                                        <div className="text-xs text-vscode-text-muted">Open Qty</div>
+                                        <div className="font-mono text-status-warning">{po.openReceiptQty.toFixed(2)}</div>
+                                    </div>
+                                </div>
+                            </button>
+                        )) : (
+                            <div className="text-sm text-vscode-text-muted">No purchase orders are waiting for receipt.</div>
+                        )}
+                    </div>
+                </div>
+
+                <div className="bg-vscode-sidebar border border-vscode-border rounded-md p-4">
+                    <h3 className="font-semibold flex items-center gap-2"><DollarSign size={16} className="text-status-success" />Payment Attention</h3>
+                    <div className="mt-4 space-y-3">
+                        {paymentQueue.length > 0 ? paymentQueue.map((invoice) => (
+                            <button
+                                key={invoice.id}
+                                className="w-full text-left p-3 bg-vscode-bg border border-vscode-border rounded hover:border-vscode-accent"
+                                onClick={() => navigate('/finance/invoices')}
+                            >
+                                <div className="flex items-start justify-between gap-3">
+                                    <div>
+                                        <div className="font-mono text-xs font-semibold text-vscode-text">{invoice.invoiceNo}</div>
+                                        <div className="text-sm text-vscode-text-muted">{invoice.vendor?.name || invoice.vendorId}</div>
+                                    </div>
+                                    <div className="text-right text-xs">
+                                        <div className="font-mono text-status-success">${Number(invoice.balanceAmount || 0).toFixed(2)}</div>
+                                        <div className={`${invoice.daysToDue < 0 ? 'text-status-error' : 'text-vscode-text-muted'}`}>
+                                            {invoice.daysToDue < 0 ? `${Math.abs(invoice.daysToDue)}d overdue` : `${invoice.daysToDue}d to due`}
+                                        </div>
+                                    </div>
+                                </div>
+                            </button>
+                        )) : (
+                            <div className="text-sm text-vscode-text-muted">No invoices need payment attention.</div>
+                        )}
+                    </div>
+                </div>
+            </div>
+
+            <div className="bg-vscode-sidebar border border-vscode-border rounded-md p-4">
+                <h3 className="font-semibold flex items-center gap-2"><Warehouse size={16} className="text-status-warning" />Stock Hotspots</h3>
+                <div className="mt-3 grid grid-cols-1 xl:grid-cols-2 gap-3">
+                    {stockHotspots.length > 0 ? stockHotspots.map((entry) => (
+                        <div key={entry.key} className="p-3 bg-vscode-bg border border-vscode-border rounded">
+                            <div className="flex items-start justify-between gap-3">
+                                <div>
+                                    <div className="text-sm text-vscode-text">{entry.item?.code || entry.item?.name || entry.key}</div>
+                                    <div className="text-xs text-vscode-text-muted">{entry.warehouseName}</div>
+                                </div>
+                                <div className="text-right text-xs">
+                                    <div className="font-mono text-status-warning">Short {entry.shortage.toFixed(2)}</div>
+                                    <div className="text-vscode-text-muted">Avail {entry.availableQty.toFixed(2)}</div>
+                                </div>
+                            </div>
+                        </div>
+                    )) : (
+                        <div className="text-sm text-vscode-text-muted">No stock shortages right now.</div>
+                    )}
                 </div>
             </div>
         </div>

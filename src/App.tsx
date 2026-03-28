@@ -12,6 +12,7 @@ import PurchaseRequisitionList from './pages/PurchaseRequisitionList';
 import PurchaseRequisitionForm from './pages/PurchaseRequisitionForm';
 import PurchaseRequisitionView from './pages/PurchaseRequisitionView';
 import ItemMaster from './pages/ItemMaster';
+import ItemView from './pages/ItemView';
 import RFQManager from './pages/RFQManager';
 import RFQView from './pages/RFQView';
 import Quotations from './pages/Quotations';
@@ -123,6 +124,7 @@ function AppLayout() {
                         <Route path="/procurement/grn" element={<GoodsReceipt />} />
                         <Route path="/procurement/vendors" element={<VendorMaster />} />
                         <Route path="/inventory/item-master" element={<ItemMaster />} />
+                        <Route path="/inventory/item-master/:id" element={<ItemView />} />
                         <Route path="/master/items" element={<ItemMaster />} />
                         <Route path="/master/categories" element={<CategoryMaster />} />
                         <Route path="/master/uom" element={<UomMaster />} />

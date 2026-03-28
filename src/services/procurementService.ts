@@ -1,6 +1,11 @@
 import api from './api';
 import { PurchaseOrder, PurchaseRequisition, PRStatus, POStatus, Quotation, RFQ } from '../types/models';
 
+export interface StatusUpdateResponse {
+    message: string;
+    pendingApproval?: boolean;
+}
+
 export const procurementService = {
     getPRs: async (): Promise<PurchaseRequisition[]> => {
         const response = await api.get('/procurement/prs');
@@ -18,8 +23,9 @@ export const procurementService = {
         const response = await api.patch(`/procurement/prs/${id}`, pr);
         return response.data;
     },
-    updatePRStatus: async (id: string, status: PRStatus, rejectionReason?: string): Promise<void> => {
-        await api.patch(`/procurement/prs/${id}/status`, { status, rejectionReason });
+    updatePRStatus: async (id: string, status: PRStatus, rejectionReason?: string): Promise<StatusUpdateResponse> => {
+        const response = await api.patch(`/procurement/prs/${id}/status`, { status, rejectionReason });
+        return response.data;
     },
 
     getRFQs: async (): Promise<RFQ[]> => {
@@ -67,7 +73,8 @@ export const procurementService = {
         const response = await api.post('/procurement/pos', po);
         return response.data;
     },
-    updatePOStatus: async (id: string, status: POStatus): Promise<void> => {
-        await api.patch(`/procurement/pos/${id}/status`, { status });
+    updatePOStatus: async (id: string, status: POStatus): Promise<StatusUpdateResponse> => {
+        const response = await api.patch(`/procurement/pos/${id}/status`, { status });
+        return response.data;
     },
 };

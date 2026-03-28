@@ -16,6 +16,11 @@ const StockTransfer = () => {
     const [notes, setNotes] = useState('');
     const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
 
+    const selectedSourceStock = stockLevels.find(
+        (level) => String(level.itemId) === item && String(level.warehouseId) === sourceWh,
+    );
+    const availableSourceQty = Number(selectedSourceStock?.availableQty ?? selectedSourceStock?.quantity ?? 0);
+
     useEffect(() => {
         fetchData();
     }, []);
@@ -48,9 +53,18 @@ const StockTransfer = () => {
             return;
         }
 
-        const sourceStock = stockLevels.find(sl => sl.itemId === item && sl.warehouseId === sourceWh);
-        if (!sourceStock || sourceStock.quantity < qty) {
-            setMessage({ type: 'error', text: 'Insufficient stock in source warehouse.' });
+        if (!item || !sourceWh || !targetWh || qty <= 0) {
+            setMessage({ type: 'error', text: 'Select both warehouses, an item, and a valid quantity.' });
+            return;
+        }
+
+        if (!selectedSourceStock) {
+            setMessage({ type: 'error', text: 'Selected item has no stock record in the source warehouse.' });
+            return;
+        }
+
+        if (availableSourceQty < qty) {
+            setMessage({ type: 'error', text: `Insufficient stock in source warehouse. Available: ${availableSourceQty.toFixed(2)}.` });
             return;
         }
 
@@ -62,16 +76,21 @@ const StockTransfer = () => {
                 quantity: qty,
                 sourceWarehouseId: sourceWh,
                 targetWarehouseId: targetWh,
-                notes
+                referenceType: 'Stock Transfer',
+                referenceId: `TRF-${Date.now()}`,
+                notes,
+                idempotencyKey: `stock-transfer-${item}-${sourceWh}-${targetWh}-${Date.now()}`,
             });
 
             await fetchData();
             setMessage({ type: 'success', text: 'Stock transfer successful.' });
+            setItem('');
             setQty(0);
             setNotes('');
         } catch (error) {
             console.error('Error executing transfer:', error);
-            setMessage({ type: 'error', text: 'Failed to execute transfer.' });
+            const apiMessage = (error as any)?.response?.data?.message;
+            setMessage({ type: 'error', text: apiMessage || 'Failed to execute transfer.' });
         } finally {
             setIsLoading(false);
         }
@@ -157,6 +176,9 @@ const StockTransfer = () => {
                                 value={qty}
                                 onChange={e => setQty(Number(e.target.value))}
                             />
+                            <div className="mt-2 text-xs text-vscode-text-muted">
+                                Available in source: {availableSourceQty.toFixed(2)}
+                            </div>
                         </div>
                     </div>
 

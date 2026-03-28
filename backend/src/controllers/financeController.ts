@@ -15,6 +15,7 @@ import {
     STRICT_TRANSITIONS,
     assertTransition,
     computeTaxAmounts,
+    evaluateApprovalDecision,
     enforceTolerance,
     generateDocumentNo,
     getSettings,
@@ -260,7 +261,65 @@ export const updateInvoiceStatus = async (req: AuthRequest, res: Response) => {
             patch.approvedBy = userId ?? null;
         }
 
+        let approvalResponse: { message: string; pendingApproval?: boolean } | null = null;
+
         await db.transaction(async (tx) => {
+            if (status === 'Approved') {
+                const approvalDecision = await evaluateApprovalDecision(tx, {
+                    req,
+                    document: 'Vendor Invoice',
+                    amount: toDecimal(invoice.amount),
+                    entityType: 'Invoice',
+                    entityId: invoice.id,
+                    targetStatus: status,
+                    currentStatus: invoice.status,
+                    entityVersion: invoice.versionNo,
+                });
+
+                if (approvalDecision.mode === 'record_only') {
+                    await logActivity(tx, {
+                        userId,
+                        action: 'APPROVAL_STEP_RECORDED',
+                        description: `Approval step recorded for ${invoice.invoiceNo}`,
+                        module: 'Finance',
+                        entityType: 'Invoice',
+                        entityId: invoice.id,
+                        payload: {
+                            document: 'Vendor Invoice',
+                            targetStatus: status,
+                            currentStatus: invoice.status,
+                            entityVersion: invoice.versionNo,
+                            approvalsRecorded: approvalDecision.approvalsRecorded,
+                            approvalsRequired: approvalDecision.approvalsRequired,
+                        },
+                    });
+                    approvalResponse = {
+                        pendingApproval: true,
+                        message: `Approval recorded (${approvalDecision.approvalsRecorded}/${approvalDecision.approvalsRequired}). Waiting for more approver(s).`,
+                    };
+                    return;
+                }
+
+                if (approvalDecision.mode === 'final' && approvalDecision.approvalsRequired > 1) {
+                    await logActivity(tx, {
+                        userId,
+                        action: 'APPROVAL_STEP_RECORDED',
+                        description: `Final approval step recorded for ${invoice.invoiceNo}`,
+                        module: 'Finance',
+                        entityType: 'Invoice',
+                        entityId: invoice.id,
+                        payload: {
+                            document: 'Vendor Invoice',
+                            targetStatus: status,
+                            currentStatus: invoice.status,
+                            entityVersion: invoice.versionNo,
+                            approvalsRecorded: approvalDecision.approvalsRecorded,
+                            approvalsRequired: approvalDecision.approvalsRequired,
+                        },
+                    });
+                }
+            }
+
             const updated = await optimisticVersionUpdate(tx, invoices, invoices.id, invoice.id, invoice.versionNo, patch);
 
             if (status === 'Cancelled') {
@@ -285,6 +344,10 @@ export const updateInvoiceStatus = async (req: AuthRequest, res: Response) => {
                 payload: { from: invoice.status, to: status },
             });
         });
+
+        if (approvalResponse) {
+            return res.json(approvalResponse);
+        }
 
         res.json({ message: 'Invoice status updated' });
     } catch (error: any) {

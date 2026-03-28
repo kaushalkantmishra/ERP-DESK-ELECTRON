@@ -71,7 +71,10 @@ const RFQManager: React.FC = () => {
 
     async function handleApprovePR(prId: string) {
         try {
-            await procurementService.updatePRStatus(prId, 'Approved');
+            const result = await procurementService.updatePRStatus(prId, 'Approved');
+            if (result?.message) {
+                alert(result.message);
+            }
             await fetchData();
         } catch (error) {
             console.error('Error approving PR:', error);

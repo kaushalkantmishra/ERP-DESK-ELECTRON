@@ -59,6 +59,9 @@ export interface StockLevel {
     itemId: string;
     warehouseId: string;
     quantity: number;
+    reservedQty?: number;
+    availableQty?: number;
+    avgCost?: number;
     minStockLevel: number;
     versionNo?: number;
     item?: Item;
@@ -346,4 +349,20 @@ export interface ActivityLog {
     payload?: unknown;
     timestamp: string;
     module: 'Auth' | 'Procurement' | 'Inventory' | 'Finance' | 'System';
+}
+
+export interface ApprovalMatrixRule {
+    id: string;
+    role: string;
+    document: string;
+    minAmount: number;
+    maxAmount: number;
+    approvers: number;
+    active: boolean;
+}
+
+export interface ApprovalMatrixConfig {
+    simulationMode: boolean;
+    adminBypass: boolean;
+    rules: ApprovalMatrixRule[];
 }

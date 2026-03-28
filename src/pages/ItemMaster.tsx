@@ -1,10 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { Search, Plus } from 'lucide-react';
+import { Search, Plus, Eye } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import { masterService } from '../services/masterService';
 import { inventoryService } from '../services/inventoryService';
 import { Item, Category, Uom, StockLevel } from '../types/models';
 
 const ItemMaster: React.FC = () => {
+    const navigate = useNavigate();
     const [items, setItems] = useState<Item[]>([]);
     const [categories, setCategories] = useState<Category[]>([]);
     const [uoms, setUoms] = useState<Uom[]>([]);
@@ -76,7 +78,7 @@ const ItemMaster: React.FC = () => {
 
     const getTotalStock = (itemId: string) => {
         return stockLevels
-            .filter(sl => sl.itemId === itemId)
+            .filter(sl => String(sl.itemId) === String(itemId))
             .reduce((sum, sl) => sum + sl.quantity, 0);
     };
 
@@ -224,11 +226,12 @@ const ItemMaster: React.FC = () => {
                             <th>Stock</th>
                             <th>Price</th>
                             <th>Reorder Lvl</th>
+                            <th>Action</th>
                         </tr>
                     </thead>
                     <tbody>
                         {isLoading ? (
-                            <tr><td colSpan={8} className="p-4 text-center text-vscode-text-muted">Loading items...</td></tr>
+                            <tr><td colSpan={9} className="p-4 text-center text-vscode-text-muted">Loading items...</td></tr>
                         ) : filteredItems.map((item) => (
                             <tr key={item.id} className="hover:bg-vscode-list-hover group">
                                 <td className="w-10 text-center">
@@ -241,11 +244,21 @@ const ItemMaster: React.FC = () => {
                                 <td className="font-mono font-bold">{getTotalStock(item.id)}</td>
                                 <td className="font-mono text-xs">${item.price?.toFixed(2)}</td>
                                 <td className="font-mono text-xs text-vscode-text-muted">{item.reorderLevel || '-'}</td>
+                                <td>
+                                    <button
+                                        type="button"
+                                        onClick={() => navigate(`/inventory/item-master/${item.id}`)}
+                                        className="p-1 rounded hover:bg-vscode-button-secondary text-vscode-text-muted hover:text-vscode-text"
+                                        title="View item"
+                                    >
+                                        <Eye size={15} />
+                                    </button>
+                                </td>
                             </tr>
                         ))}
                         {!isLoading && filteredItems.length === 0 && (
                             <tr>
-                                <td colSpan={8} className="text-center py-8 text-vscode-text-muted">
+                                <td colSpan={9} className="text-center py-8 text-vscode-text-muted">
                                     No items found. Add a new item to get started.
                                 </td>
                             </tr>

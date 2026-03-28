@@ -45,7 +45,7 @@ const Reports = () => {
     }
 
     const totalInventoryValue = stockLevels.reduce((sum, level) => {
-        const item = items.find((entry) => entry.id === level.itemId);
+        const item = items.find((entry) => String(entry.id) === String(level.itemId));
         return sum + (Number(level.quantity) * Number(item?.price || 0));
     }, 0);
     const totalSpend = invoices.filter((invoice) => invoice.status === 'Paid').reduce((sum, invoice) => sum + Number(invoice.amount), 0);
@@ -53,14 +53,14 @@ const Reports = () => {
     const pendingPOs = pos.filter((po) => ['Draft', 'Issued', 'Partially Received'].includes(po.status)).length;
 
     const vendorStats = vendors.map((vendor) => {
-        const vendorPOs = pos.filter((po) => po.vendorId === vendor.id);
+        const vendorPOs = pos.filter((po) => String(po.vendorId) === String(vendor.id));
         const totalAmount = vendorPOs.reduce((sum, po) => sum + Number(po.totalAmount || 0), 0);
         const completedPOs = vendorPOs.filter((po) => ['Fully Received', 'Closed'].includes(po.status)).length;
         return { ...vendor, totalAmount, completedPOs, totalPOs: vendorPOs.length };
     }).sort((a, b) => b.totalAmount - a.totalAmount);
 
     const lowStockItems = stockLevels.map((level) => {
-        const item = items.find((entry) => entry.id === level.itemId);
+        const item = items.find((entry) => String(entry.id) === String(level.itemId));
         return { ...level, item, deficit: Number(level.minStockLevel || 0) - Number(level.quantity) };
     }).filter((level) => Number(level.quantity) <= Number(level.item?.reorderLevel || level.minStockLevel || 0)).sort((a, b) => b.deficit - a.deficit);
 
@@ -89,7 +89,7 @@ const Reports = () => {
                     </div>
                     <div className="bg-vscode-bg border border-vscode-border rounded">
                         <div className="p-3 border-b border-vscode-border font-semibold text-vscode-text">Inventory Valuation (Top Items)</div>
-                        <table className="table-vscode"><thead><tr><th>Item</th><th>Price</th><th className="text-right">Total Qty</th><th className="text-right">Total Value</th></tr></thead><tbody>{items.map((item) => { const totalQty = stockLevels.filter((level) => level.itemId === item.id).reduce((sum, level) => sum + Number(level.quantity), 0); const totalVal = totalQty * Number(item.price); return { ...item, totalQty, totalVal }; }).sort((a, b) => b.totalVal - a.totalVal).slice(0, 5).map((item) => <tr key={item.id}><td>{item.name}</td><td>${item.price}</td><td className="text-right font-mono">{item.totalQty.toFixed(2)}</td><td className="text-right font-mono font-bold">${item.totalVal.toLocaleString()}</td></tr>)}</tbody></table>
+                        <table className="table-vscode"><thead><tr><th>Item</th><th>Price</th><th className="text-right">Total Qty</th><th className="text-right">Total Value</th></tr></thead><tbody>{items.map((item) => { const totalQty = stockLevels.filter((level) => String(level.itemId) === String(item.id)).reduce((sum, level) => sum + Number(level.quantity), 0); const totalVal = totalQty * Number(item.price); return { ...item, totalQty, totalVal }; }).sort((a, b) => b.totalVal - a.totalVal).slice(0, 5).map((item) => <tr key={item.id}><td>{item.name}</td><td>${item.price}</td><td className="text-right font-mono">{item.totalQty.toFixed(2)}</td><td className="text-right font-mono font-bold">${item.totalVal.toLocaleString()}</td></tr>)}</tbody></table>
                     </div>
                 </div>
 
@@ -109,7 +109,7 @@ const Reports = () => {
                 <div className="mt-6 bg-vscode-bg border border-vscode-border rounded">
                     <div className="p-3 border-b border-vscode-border font-semibold text-vscode-text">Recent Stock Movement</div>
                     <div className="overflow-auto max-h-60">
-                        <table className="table-vscode"><thead><tr><th>Timestamp</th><th>Item</th><th>Type</th><th className="text-right">Qty</th><th>Warehouse</th><th>Notes</th></tr></thead><tbody>{[...stockTransactions].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()).slice(0, 8).map((transaction) => { const item = items.find((entry) => entry.id === transaction.itemId); return <tr key={transaction.id}><td className="text-vscode-text-muted">{new Date(transaction.date).toLocaleString()}</td><td>{item?.code}</td><td><span className="badge badge-info">{transaction.type}</span></td><td className="text-right">{transaction.quantity}</td><td>{transaction.warehouse?.name || transaction.warehouseId}</td><td className="text-vscode-text-muted truncate max-w-xs">{transaction.notes}</td></tr>; })}{stockTransactions.length === 0 && <tr><td colSpan={6} className="text-center p-4 text-vscode-text-muted">No stock transactions recorded.</td></tr>}</tbody></table>
+                        <table className="table-vscode"><thead><tr><th>Timestamp</th><th>Item</th><th>Type</th><th className="text-right">Qty</th><th>Warehouse</th><th>Notes</th></tr></thead><tbody>{[...stockTransactions].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()).slice(0, 8).map((transaction) => { const item = items.find((entry) => String(entry.id) === String(transaction.itemId)); return <tr key={transaction.id}><td className="text-vscode-text-muted">{new Date(transaction.date).toLocaleString()}</td><td>{item?.code}</td><td><span className="badge badge-info">{transaction.type}</span></td><td className="text-right">{transaction.quantity}</td><td>{transaction.warehouse?.name || transaction.warehouseId}</td><td className="text-vscode-text-muted truncate max-w-xs">{transaction.notes}</td></tr>; })}{stockTransactions.length === 0 && <tr><td colSpan={6} className="text-center p-4 text-vscode-text-muted">No stock transactions recorded.</td></tr>}</tbody></table>
                     </div>
                 </div>
             </div>

@@ -139,7 +139,10 @@ const VendorInvoice: React.FC = () => {
     async function approveInvoice(invoiceId: string) {
         try {
             setIsLoading(true);
-            await financeService.updateInvoiceStatus(invoiceId, 'Approved');
+            const result = await financeService.updateInvoiceStatus(invoiceId, 'Approved');
+            if (result?.message) {
+                alert(result.message);
+            }
             await fetchData();
         } catch (error: any) {
             console.error(error);

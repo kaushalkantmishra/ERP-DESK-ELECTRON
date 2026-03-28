@@ -1,5 +1,6 @@
 import api from './api';
 import { Invoice, InvoiceStatus, Payment } from '../types/models';
+import type { StatusUpdateResponse } from './procurementService';
 
 export const financeService = {
     getInvoices: async (): Promise<Invoice[]> => {
@@ -14,8 +15,9 @@ export const financeService = {
         const response = await api.post('/finance/invoice', invoice);
         return response.data;
     },
-    updateInvoiceStatus: async (id: string, status: InvoiceStatus): Promise<void> => {
-        await api.patch(`/finance/invoice/${id}/status`, { status });
+    updateInvoiceStatus: async (id: string, status: InvoiceStatus): Promise<StatusUpdateResponse> => {
+        const response = await api.patch(`/finance/invoice/${id}/status`, { status });
+        return response.data;
     },
     getPayments: async (): Promise<Payment[]> => {
         const response = await api.get('/finance/payments');

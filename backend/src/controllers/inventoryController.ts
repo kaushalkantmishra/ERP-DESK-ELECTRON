@@ -512,6 +512,112 @@ export const createStockTransaction = async (req: AuthRequest, res: Response) =>
     }
 };
 
+export const issueMaterialRequest = async (req: AuthRequest, res: Response) => {
+    const userId = getAuditUserId(req);
+    const { warehouseId, idempotencyKey } = req.body;
+
+    try {
+        const normalizedMrId = toId(String(req.params.id), 'material request id');
+        const normalizedWarehouseId = toId(warehouseId, 'warehouse id');
+        const materialRequest = await db.query.materialRequests.findFirst({
+            where: eq(materialRequests.id, normalizedMrId),
+            with: {
+                requestor: true,
+                materialRequestItems: { with: { item: true } },
+            },
+        });
+
+        if (!materialRequest) return res.status(404).json({ message: 'Material request not found' });
+        if (materialRequest.status === 'Issued') return res.status(400).json({ message: 'Material request is already issued' });
+        if (materialRequest.status === 'Rejected') return res.status(400).json({ message: 'Rejected material request cannot be issued' });
+
+        const settings = await db.transaction((tx) => getSettings(tx));
+
+        const updatedRequest = await db.transaction(async (tx) => {
+            const reservations = await tx.query.stockReservations.findMany({
+                where: and(
+                    eq(stockReservations.sourceType, 'MaterialRequest'),
+                    eq(stockReservations.sourceId, materialRequest.id),
+                    eq(stockReservations.warehouseId, normalizedWarehouseId),
+                ),
+            });
+            const reservationByLineId = new Map(
+                reservations
+                    .filter((reservation: any) => reservation.sourceLineId)
+                    .map((reservation: any) => [reservation.sourceLineId, reservation]),
+            );
+
+            for (const line of materialRequest.materialRequestItems || []) {
+                const requestedQty = toDecimal(line.quantity);
+                if (requestedQty <= 0) throw new Error('Material request line quantity must be greater than zero');
+
+                const source = await decreaseStock(tx, line.itemId, normalizedWarehouseId, requestedQty, settings.allowNegativeStock);
+                await createLedgerEntry(tx, {
+                    itemId: line.itemId,
+                    warehouseId: normalizedWarehouseId,
+                    type: 'Issue',
+                    quantity: requestedQty.toFixed(2),
+                    unitCost: source.avgCost.toFixed(2),
+                    referenceType: 'Material Request',
+                    referenceId: materialRequest.requestNo,
+                    lineReferenceId: line.id,
+                    performedBy: userId ?? null,
+                    idempotencyKey: `${idempotencyKey || `mr-issue-${materialRequest.id}`}-${line.id}`,
+                    notes: `Issued for material request ${materialRequest.requestNo} to ${materialRequest.department}`,
+                });
+
+                const reservation = reservationByLineId.get(line.id);
+                if (reservation) {
+                    const openReservedQty = roundMoney(
+                        Math.max(0, toDecimal(reservation.quantity) - toDecimal(reservation.consumedQty) - toDecimal(reservation.releasedQty)),
+                    );
+
+                    if (openReservedQty > 0) {
+                        await adjustReservation(tx, line.itemId, normalizedWarehouseId, -openReservedQty);
+                    }
+
+                    const consumedDelta = Math.min(requestedQty, openReservedQty);
+                    const releaseDelta = roundMoney(Math.max(0, openReservedQty - consumedDelta));
+
+                    await tx.update(stockReservations).set({
+                        consumedQty: roundMoney(toDecimal(reservation.consumedQty) + consumedDelta).toFixed(2),
+                        releasedQty: roundMoney(toDecimal(reservation.releasedQty) + releaseDelta).toFixed(2),
+                        status: 'Closed',
+                        releasedAt: new Date(),
+                    }).where(eq(stockReservations.id, reservation.id));
+                }
+            }
+
+            const updated = await optimisticVersionUpdate(tx, materialRequests, materialRequests.id, materialRequest.id, materialRequest.versionNo, {
+                status: 'Issued',
+            });
+
+            await logActivity(tx, {
+                userId,
+                action: 'MATERIAL_REQUEST_ISSUED',
+                description: `Material request ${materialRequest.requestNo} issued from warehouse ${normalizedWarehouseId}`,
+                module: 'Inventory',
+                entityType: 'MaterialRequest',
+                entityId: materialRequest.id,
+                beforeData: materialRequest,
+                afterData: updated,
+                payload: { warehouseId: normalizedWarehouseId, itemCount: materialRequest.materialRequestItems?.length || 0 },
+            });
+
+            return updated;
+        });
+
+        res.json({
+            ...updatedRequest,
+            requestor: materialRequest.requestor,
+            materialRequestItems: materialRequest.materialRequestItems,
+        });
+    } catch (error: any) {
+        console.error(error);
+        res.status(400).json({ message: error.message || 'Error issuing material request' });
+    }
+};
+
 export const getMaterialRequests = async (_req: AuthRequest, res: Response) => {
     try {
         const result = await db.query.materialRequests.findMany({

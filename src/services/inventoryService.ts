@@ -1,6 +1,11 @@
 import api from './api';
 import { GRN, MaterialRequest, StockLevel, StockTransaction } from '../types/models';
 
+const normalizeMaterialRequest = (request: any): MaterialRequest => ({
+    ...request,
+    items: request.materialRequestItems || request.items || [],
+});
+
 export const inventoryService = {
     getGRNs: async (): Promise<GRN[]> => {
         const response = await api.get('/inventory/grns');
@@ -26,13 +31,14 @@ export const inventoryService = {
 
     getMaterialRequests: async (): Promise<MaterialRequest[]> => {
         const response = await api.get('/inventory/material-requests');
-        return response.data.map((request: any) => ({
-            ...request,
-            items: request.materialRequestItems || request.items || [],
-        }));
+        return response.data.map(normalizeMaterialRequest);
     },
     createMaterialRequest: async (req: any): Promise<MaterialRequest> => {
         const response = await api.post('/inventory/material-request', req);
-        return response.data;
+        return normalizeMaterialRequest(response.data);
+    },
+    issueMaterialRequest: async (id: string, warehouseId: string): Promise<MaterialRequest> => {
+        const response = await api.post(`/inventory/material-requests/${id}/issue`, { warehouseId });
+        return normalizeMaterialRequest(response.data);
     },
 };
