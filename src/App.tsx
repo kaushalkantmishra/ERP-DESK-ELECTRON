@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { BrowserRouter as Router, Navigate, Route, Routes } from 'react-router-dom';
+import { BrowserRouter, HashRouter, Navigate, Route, Routes } from 'react-router-dom';
 import { ProtectedRoute } from './components/auth/ProtectedRoute';
 import Login from './pages/Login';
 import { AppProvider, useAppContext } from './contexts/AppContext';
@@ -43,6 +43,8 @@ export interface Tab {
 }
 
 function App() {
+  const Router = window.location.protocol === 'file:' ? HashRouter : BrowserRouter;
+
   return (
     <AppProvider>
       <ThemeProvider>
