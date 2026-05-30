@@ -1,0 +1,29 @@
+[
+  {
+    "id": "rfq1",
+    "rfqNo": "RFQ-2026-001",
+    "prId": "pr2",
+    "vendorIds": ["v2", "v3"],
+    "createdDate": "2026-01-14",
+    "dueDate": "2026-01-21",
+    "status": "Closed"
+  },
+  {
+    "id": "rfq2",
+    "rfqNo": "RFQ-2026-002",
+    "prId": "pr5",
+    "vendorIds": ["v4", "v2"],
+    "createdDate": "2026-01-21",
+    "dueDate": "2026-01-28",
+    "status": "Sent"
+  },
+  {
+    "id": "rfq3",
+    "rfqNo": "RFQ-2026-003",
+    "prId": "pr1",
+    "vendorIds": ["v1", "v3"],
+    "createdDate": "2026-01-11",
+    "dueDate": "2026-01-18",
+    "status": "Closed"
+  }
+]

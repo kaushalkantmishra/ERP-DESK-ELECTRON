@@ -1,0 +1,8 @@
+[
+  { "id": "u1", "name": "Admin User", "role": "Admin", "department": "IT", "email": "admin@erp.com", "password": "password" },
+  { "id": "u2", "name": "John Buyer", "role": "Procurement", "department": "Procurement", "email": "buyer@erp.com", "password": "password" },
+  { "id": "u3", "name": "Sarah Store", "role": "Store", "department": "Warehouse", "email": "store@erp.com", "password": "password" },
+  { "id": "u4", "name": "Mike Requestor", "role": "Dept", "department": "Marketing", "email": "requestor@erp.com", "password": "password" },
+  { "id": "u5", "name": "Alice Finance", "role": "Finance", "department": "Finance", "email": "finance@erp.com", "password": "password" },
+  { "id": "u6", "name": "Vendor User", "role": "Vendor", "department": "External", "email": "vendor@erp.com", "password": "password" }
+]

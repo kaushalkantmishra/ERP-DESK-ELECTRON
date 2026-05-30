@@ -1,0 +1,8 @@
+[
+  { "id": "v1", "name": "Tech Solutions Inc", "email": "sales@techsol.com", "phone": "555-0101", "rating": 4.5, "address": "123 Tech St, Silicon Valley", "taxId": "TAX-US-001", "active": true, "contactPerson": "John Tech" },
+  { "id": "v2", "name": "Office Depot", "email": "b2b@officedepot.com", "phone": "555-0102", "rating": 4.0, "address": "456 Paper Ln, NY", "taxId": "TAX-US-002", "active": true, "contactPerson": "Sarah Paper" },
+  { "id": "v3", "name": "Global Importers", "email": "orders@globalimp.com", "phone": "555-0103", "rating": 3.5, "address": "789 Ship Rd, LA", "taxId": "TAX-US-003", "active": true, "contactPerson": "Mike Ship" },
+  { "id": "v4", "name": "Furniture World", "email": "sales@furniworld.com", "phone": "555-0104", "rating": 4.8, "address": "321 Oak St, TX", "taxId": "TAX-US-004", "active": true, "contactPerson": "Emma Wood" },
+  { "id": "v5", "name": "Clean & Clear Services", "email": "contact@cleanandclear.com", "phone": "555-0105", "rating": 4.2, "address": "555 Sparkle Way, FL", "taxId": "TAX-US-005", "active": true, "contactPerson": "David Shine" },
+  { "id": "v6", "name": "Brew Masters", "email": "supplies@brewmasters.com", "phone": "555-0106", "rating": 4.9, "address": "777 Bean Blvd, WA", "taxId": "TAX-US-006", "active": true, "contactPerson": "Lisa Roast" }
+]

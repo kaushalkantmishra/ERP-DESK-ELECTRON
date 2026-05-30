@@ -1,0 +1,5 @@
+[
+    { "id": "c1", "name": "Electronics", "description": "Computers, screens, etc.", "uom": "PCS" },
+    { "id": "c2", "name": "Accessories", "description": "Mice, keyboards, cables", "uom": "PCS" },
+    { "id": "c3", "name": "Stationery", "description": "Paper, pencils, ink", "uom": "REAM" }
+]

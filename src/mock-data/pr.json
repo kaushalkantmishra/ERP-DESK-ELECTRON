@@ -1,0 +1,98 @@
+[
+  {
+    "id": "pr1",
+    "prNo": "PR-2026-001",
+    "requestorId": "u2",
+    "department": "IT",
+    "date": "2026-01-10",
+    "priority": "High",
+    "status": "Approved",
+    "justification": "New laptops for developers",
+    "items": [
+      { "itemId": "i1", "quantity": 5, "requiredDate": "2026-02-01" },
+      { "itemId": "i2", "quantity": 5, "requiredDate": "2026-02-01" },
+      { "itemId": "i3", "quantity": 10, "requiredDate": "2026-02-01" }
+    ]
+  },
+  {
+    "id": "pr2",
+    "prNo": "PR-2026-002",
+    "requestorId": "u3",
+    "department": "Operations",
+    "date": "2026-01-12",
+    "priority": "Medium",
+    "status": "RFQ Created",
+    "justification": "Office supplies replenishment",
+    "items": [
+      { "itemId": "i4", "quantity": 50, "requiredDate": "2026-02-05" },
+      { "itemId": "i5", "quantity": 20, "requiredDate": "2026-02-05" }
+    ]
+  },
+   {
+    "id": "pr3",
+    "prNo": "PR-2026-003",
+    "requestorId": "u4",
+    "department": "Marketing",
+    "date": "2026-01-15",
+    "priority": "Low",
+    "status": "Draft",
+    "justification": "Event materials",
+    "items": [
+      { "itemId": "i4", "quantity": 10, "requiredDate": "2026-03-01" }
+    ]
+  },
+  {
+    "id": "pr4",
+    "prNo": "PR-2026-004",
+    "requestorId": "u2",
+    "department": "IT",
+    "date": "2026-01-18",
+    "priority": "Urgent",
+    "status": "Submitted",
+    "justification": "Replacement projector for conference room",
+    "items": [
+      { "itemId": "i8", "quantity": 1, "requiredDate": "2026-01-25" },
+      { "itemId": "i9", "quantity": 2, "requiredDate": "2026-01-25" }
+    ]
+  },
+  {
+    "id": "pr5",
+    "prNo": "PR-2026-005",
+    "requestorId": "u5",
+    "department": "HR",
+    "date": "2026-01-20",
+    "priority": "Medium",
+    "status": "Approved",
+    "justification": "Furniture for new hires",
+    "items": [
+      { "itemId": "i6", "quantity": 4, "requiredDate": "2026-02-15" },
+      { "itemId": "i7", "quantity": 2, "requiredDate": "2026-02-15" }
+    ]
+  },
+  {
+    "id": "pr6",
+    "prNo": "PR-2026-006",
+    "requestorId": "u3",
+    "department": "Operations",
+    "date": "2026-01-21",
+    "priority": "Low",
+    "status": "Rejected",
+    "justification": "Expensive coffee machine",
+    "items": [
+      { "itemId": "i11", "quantity": 50, "requiredDate": "2026-02-01" }
+    ]
+  },
+  {
+    "id": "pr7",
+    "prNo": "PR-2026-007",
+    "requestorId": "u4",
+    "department": "Marketing",
+    "date": "2026-01-22",
+    "priority": "High",
+    "status": "Submitted",
+    "justification": "Cleaning supplies for event cleanup",
+    "items": [
+      { "itemId": "i12", "quantity": 20, "requiredDate": "2026-01-30" }
+    ]
+  }
+]

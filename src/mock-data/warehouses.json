@@ -1,0 +1,4 @@
+[
+  { "id": "w1", "name": "Main Warehouse", "code": "WH-001", "location": "Building A", "managerId": "u3" },
+  { "id": "w2", "name": "Distribution Center", "code": "WH-002", "location": "Industrial Zone", "managerId": "u3" }
+]
